@@ -54,4 +54,10 @@ await Bun.file(path.join(packageDir, "package.json")).write(
 
 await $`
   ln -s ${path.join(__dirname, "src")} ${path.join(packageDir, "src")}
+  rm -rf ${path.join(__dirname, "node_modules", "react")}
+  ln -s ${path.join(componentsFolder, "node_modules", "react")} ${path.join(
+    __dirname,
+    "node_modules",
+    "react",
+  )}
 `;

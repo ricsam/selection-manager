@@ -1,0 +1,539 @@
+# SelectionManager Library - LLM Reference Guide
+
+## Overview
+A React library for managing grid-based cell selections with support for mouse interactions, keyboard navigation, and both finite and infinite grids. Supports single/multi-cell selections, row/column selections, and visual styling.
+
+## Core Types
+
+```typescript
+type SMSelection = {
+  start: { row: number; col: number };
+  end: { row: number; col: number };
+};
+
+type IsSelecting = 
+  | { type: "none" }
+  | (SMSelection & { type: "drag" | "add" | "remove" | "shift" });
+
+type IsEditing =
+  | { type: "none" }
+  | { type: "cell"; row: number; col: number };
+
+type SelectionManagerState = {
+  hasFocus: boolean;
+  selections: SMSelection[];
+  isSelecting: IsSelecting;
+  isEditing: IsEditing;
+};
+
+type KeyboardEvent = {
+  key: string;
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  preventDefault: () => void;
+};
+```
+
+## SelectionManager Class
+
+### Constructor
+```typescript
+new SelectionManager(
+  getNumRows: () => number,    // Function returning total rows (can return Infinity)
+  getNumCols: () => number     // Function returning total columns (can return Infinity)
+)
+```
+
+### State Management
+```typescript
+getState(): SelectionManagerState
+setState(state: Partial<SelectionManagerState> | ((state: SelectionManagerState) => Partial<SelectionManagerState>)): void
+
+// State change listeners
+onNextState(callback: (state: SelectionManagerState) => void): () => void  // Returns cleanup function
+onNewRequestedState(callback: (state: SelectionManagerState) => void): () => void  // For controlled components
+
+// Advanced state observation with cleanup support
+observeStateChange<T>(
+  selector: (state: SelectionManagerState) => T,
+  callback: (value: T) => void | (() => void),
+  runInstant?: boolean
+): () => void
+```
+
+### Mouse Event Handlers
+```typescript
+// Cell mouse interactions
+cellMouseDown(row: number, col: number, keys: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }): void
+cellMouseEnter(row: number, col: number): void
+cellMouseUp(row: number, col: number): void
+cellDoubleClick(row: number, col: number): void
+
+// Header mouse interactions (for row/column selection)
+headerMouseDown(index: number, type: "row" | "col", keys: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }): void
+headerMouseEnter(index: number, type: "row" | "col"): void
+headerMouseUp(index: number, type: "row" | "col"): void
+```
+
+### Keyboard Interaction
+```typescript
+handleKeyDown(event: KeyboardEvent): void
+```
+
+**Supported Keyboard Shortcuts:**
+- `Escape` - Cancel editing (if editing) or clear all selections and lose focus
+- `F2` - Start editing the top-left cell in current selection
+- `Ctrl/Cmd + A` - Select all cells (disabled while editing)
+- `Arrow Keys` - Navigate selection (disabled while editing)
+- `Shift + Arrow Keys` - Extend current selection (disabled while editing)
+- `Ctrl/Cmd + Shift + Arrow Keys` - Extend selection to edge of grid (disabled while editing)
+
+### Selection Queries
+```typescript
+isSelected(cell: { row: number; col: number }): boolean
+isWholeRowSelected(index: number): boolean
+isWholeColSelected(index: number): boolean
+hasSelection(): boolean
+cellInSelection(cell: { row: number; col: number }, selection: SMSelection): boolean
+getTopLeftCellInSelection(): { row: number; col: number } | undefined
+```
+
+### Cell Editing
+```typescript
+cellDoubleClick(row: number, col: number): void
+cancelEditing(): void
+isEditingCell(row: number, col: number): boolean
+```
+
+### Visual Styling Support
+```typescript
+// Get CSS box-shadow for cell borders
+getCellBoxShadow(cell: { row: number; col: number }): string | undefined
+
+// Get CSS box-shadow for header borders  
+getHeaderBoxShadow(index: number, type: "row" | "col"): string | undefined
+
+// Get CSS box-shadow for container focus state
+getContainerBoxShadow(): string | undefined
+
+// Get which borders should be drawn for committed selections
+selectionBorders(cell: { row: number; col: number }): Border[]
+
+// Get which borders should be drawn for current selection
+currentSelectionBorders(cell: { row: number; col: number }): Border[]
+
+type Border = "left" | "right" | "top" | "bottom"
+```
+
+### Data Export
+```typescript
+selectionToTsv(data: Map<string, unknown>): string
+// data keys should be in format "row,col" (e.g., "0,1", "2,3")
+// Returns TSV string of selected cells only
+```
+
+### DOM Element Setup (for non-React usage)
+```typescript
+// Setup cell element with automatic event handling and styling
+setupCellElement(el: HTMLElement, cell: { row: number; col: number }): () => void
+
+// Setup header element with automatic event handling and styling  
+setupHeaderElement(el: HTMLElement, index: number, type: "row" | "col"): () => void
+
+// Setup container element with focus/blur and keyboard handling
+setupContainerElement(el: HTMLElement): () => void
+// All setup methods return cleanup functions that should be called when elements are removed
+```
+
+**What the setup methods do automatically:**
+- **Event Handling**: Add appropriate mouse event listeners (mousedown, mouseenter, mouseup, dblclick for cells)
+- **Style Updates**: Automatically update `element.style.boxShadow` when selections change
+- **State Sync**: Subscribe to SelectionManager state changes and update elements accordingly
+- **Text Selection Prevention**: Automatically prevent browser text selection during drag operations (container only)
+- **Cleanup**: Return functions that remove all listeners and subscriptions
+
+### State Observation Methods
+
+#### `onNextState(callback)`
+- **Use**: Subscribe to all state changes (uncontrolled mode)
+- **When called**: After state has been updated
+- **Returns**: Cleanup function
+
+#### `onNewRequestedState(callback)` 
+- **Use**: Subscribe to state change requests (controlled mode)
+- **When called**: When new state is computed but not yet applied (for controlled components)
+- **Returns**: Cleanup function
+- **Example**: Used by `useInitializeSelectionManager` for controlled mode
+
+#### `observeStateChange(selector, callback, runInstant?)`
+- **Use**: Watch for changes to specific derived state values with automatic cleanup
+- **selector**: Function to extract specific value from state
+- **callback**: Called when selected value changes, can return cleanup function
+- **runInstant**: If true, runs callback immediately with current state
+- **Returns**: Cleanup function
+- **Example**: Used internally to manage text selection prevention during drag operations
+
+### Focus Management
+```typescript
+focus(): void
+blur(): void
+cancelSelection(): void
+```
+
+## React Hooks
+
+### useInitializeSelectionManager
+Creates and configures a SelectionManager instance with React integration.
+
+```typescript
+function useInitializeSelectionManager(props: {
+  getNumRows?: () => number;                              // Default: () => Infinity
+  getNumCols?: () => number;                              // Default: () => Infinity  
+  initialState?: Partial<SelectionManagerState>;         // Initial state (uncontrolled mode)
+  state?: SelectionManagerState;                          // Current state (controlled mode)
+  onStateChange?: (state: SelectionManagerState) => void; // State change callback
+  containerElement?: HTMLElement | null;                 // Element for auto event handling
+}): SelectionManager
+```
+
+**Auto Event Handling:** When `containerElement` is provided, the hook automatically calls `setupContainerElement()` which:
+- Adds window mouse/keyboard event listeners
+- Handles focus/blur when clicking inside/outside container  
+- Cancels selection on mouseup outside container
+- Processes keyboard events when focused
+- Updates container styling based on focus state
+
+### useSelectionManager
+Subscribes to SelectionManager state changes and returns derived data.
+
+```typescript
+function useSelectionManager<T>(
+  selectionManager: SelectionManager,
+  selector: () => T,                                    // Function to derive data from current state
+  areEqual?: (a: T, b: T) => boolean                   // Custom equality check (default: ===)
+): T
+```
+
+## Usage Patterns
+
+### Basic Grid Setup
+```typescript
+function MyGrid() {
+  const [containerRef, setContainerRef] = useState<HTMLDivElement>(null);
+  
+  const selectionManager = useInitializeSelectionManager({
+    getNumRows: () => 10,
+    getNumCols: () => 5,
+    containerElement: containerRef
+  });
+
+  const selections = useSelectionManager(
+    selectionManager, 
+    () => selectionManager.getState().selections
+  );
+
+  return (
+    <div ref={setContainerRef}>
+      {/* Render grid cells */}
+      {Array.from({ length: 10 }, (_, row) =>
+        Array.from({ length: 5 }, (_, col) => (
+          <div
+            key={`${row}-${col}`}
+            style={{ 
+              boxShadow: selectionManager.getCellBoxShadow({ row, col })
+            }}
+            onMouseDown={(e) => selectionManager.cellMouseDown(row, col, e)}
+            onMouseEnter={() => selectionManager.cellMouseEnter(row, col)}
+            onMouseUp={() => selectionManager.cellMouseUp(row, col)}
+          >
+            Cell {row},{col}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+```
+
+### Row/Column Headers
+```typescript
+function GridWithHeaders() {
+  const selectionManager = useInitializeSelectionManager({
+    getNumRows: () => 10,
+    getNumCols: () => 5
+  });
+
+  return (
+    <div>
+      {/* Column Headers */}
+      {Array.from({ length: 5 }, (_, col) => (
+        <div
+          key={`col-${col}`}
+          style={{ 
+            boxShadow: selectionManager.getHeaderBoxShadow(col, "col")
+          }}
+          onMouseDown={(e) => selectionManager.headerMouseDown(col, "col", e)}
+          onMouseEnter={() => selectionManager.headerMouseEnter(col, "col")}
+          onMouseUp={() => selectionManager.headerMouseUp(col, "col")}
+        >
+          Col {col}
+        </div>
+      ))}
+      
+      {/* Row Headers + Cells */}
+      {Array.from({ length: 10 }, (_, row) => (
+        <div key={`row-${row}`}>
+          <div
+            style={{ 
+              boxShadow: selectionManager.getHeaderBoxShadow(row, "row")
+            }}
+            onMouseDown={(e) => selectionManager.headerMouseDown(row, "row", e)}
+            onMouseEnter={() => selectionManager.headerMouseEnter(row, "row")}
+            onMouseUp={() => selectionManager.headerMouseUp(row, "row")}
+          >
+            Row {row}
+          </div>
+          {/* Render cells for this row */}
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+### Controlled Mode
+```typescript
+function ControlledGrid() {
+  const [selectionState, setSelectionState] = useState<SelectionManagerState>({
+    hasFocus: false,
+    selections: [],
+    isSelecting: { type: "none" }
+  });
+
+  const selectionManager = useInitializeSelectionManager({
+    state: selectionState,
+    onStateChange: setSelectionState
+  });
+
+  // Selection state is now controlled by React state
+  return <div>/* Grid implementation */</div>;
+}
+```
+
+### Data Export
+```typescript
+function ExportableGrid() {
+  const selectionManager = useInitializeSelectionManager({
+    getNumRows: () => 100,
+    getNumCols: () => 20
+  });
+
+  const exportSelection = () => {
+    const dataMap = new Map<string, unknown>();
+    
+    // Populate data map with your grid data
+    for (let row = 0; row < 100; row++) {
+      for (let col = 0; col < 20; col++) {
+        dataMap.set(`${row},${col}`, `Data for ${row},${col}`);
+      }
+    }
+
+    const tsv = selectionManager.selectionToTsv(dataMap);
+    console.log('Exported TSV:', tsv);
+  };
+
+  return (
+    <div>
+      {/* Grid implementation */}
+      <button onClick={exportSelection}>Export Selection</button>
+    </div>
+  );
+}
+```
+
+### Cell Editing Example
+```typescript
+function EditableGrid() {
+  const selectionManager = useInitializeSelectionManager({
+    getNumRows: () => 10,
+    getNumCols: () => 5
+  });
+
+  const isEditing = useSelectionManager(
+    selectionManager,
+    () => selectionManager.isEditing
+  );
+
+  const handleCellEdit = (row: number, col: number, value: string) => {
+    // Save the edited value
+    console.log(`Cell ${row},${col} edited to: ${value}`);
+    selectionManager.cancelEditing();
+  };
+
+  return (
+    <div>
+      {Array.from({ length: 10 }, (_, row) =>
+        Array.from({ length: 5 }, (_, col) => {
+          const isEditingThisCell = selectionManager.isEditingCell(row, col);
+          
+          return isEditingThisCell ? (
+            <input
+              key={`${row}-${col}`}
+              autoFocus
+              onBlur={() => selectionManager.cancelEditing()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleCellEdit(row, col, e.target.value);
+                } else if (e.key === 'Escape') {
+                  selectionManager.cancelEditing();
+                }
+              }}
+            />
+          ) : (
+            <CellComponent 
+              key={`${row}-${col}`}
+              row={row} 
+              col={col} 
+              selectionManager={selectionManager} 
+            />
+          );
+        })
+      )}
+    </div>
+  );
+}
+```
+
+### High-Performance Callback Refs (Recommended)
+For optimal performance, use individual components with memoized callback refs:
+
+```typescript
+// Cell component with memoized callback ref
+const CellComponent = React.memo(({ row, col, selectionManager }: {
+  row: number;
+  col: number; 
+  selectionManager: SelectionManager;
+}) => {
+  // CRITICAL: Use useCallback to prevent ref function from changing on every render
+  const cellRef = useCallback((el: HTMLElement | null) => {
+    if (el) {
+      return selectionManager.setupCellElement(el, { row, col });
+    }
+  }, [row, col, selectionManager]);
+
+  return (
+    <div
+      ref={cellRef}
+      style={{
+        width: 40,
+        height: 40,
+        border: "1px solid #ddd",
+        cursor: "pointer"
+      }}
+    >
+      {`${row},${col}`}
+    </div>
+  );
+});
+
+// Header component with memoized callback ref
+const HeaderComponent = React.memo(({ index, type, selectionManager }: {
+  index: number;
+  type: "row" | "col";
+  selectionManager: SelectionManager;
+}) => {
+  const headerRef = useCallback((el: HTMLElement | null) => {
+    if (el) {
+      return selectionManager.setupHeaderElement(el, index, type);
+    }
+  }, [index, type, selectionManager]);
+
+  return (
+    <div
+      ref={headerRef}
+      style={{
+        width: 40,
+        height: 40,
+        backgroundColor: "#f0f0f0",
+        cursor: "pointer"
+      }}
+    >
+      {index}
+    </div>
+  );
+});
+
+function HighPerformanceGrid() {
+  const [containerElement, setContainerElement] = useState<HTMLElement | null>(null);
+  
+  const selectionManager = useInitializeSelectionManager({
+    getNumRows: () => 10,
+    getNumCols: () => 5,
+    containerElement
+  });
+
+  return (
+    <div 
+      ref={setContainerElement}
+      style={{ display: "inline-grid", gridTemplateColumns: "repeat(6, 40px)" }}
+    >
+      {/* Render individual components for each cell/header */}
+      {Array.from({ length: 10 }, (_, row) =>
+        Array.from({ length: 5 }, (_, col) => (
+          <CellComponent 
+            key={`${row}-${col}`}
+            row={row} 
+            col={col} 
+            selectionManager={selectionManager} 
+          />
+        ))
+      )}
+    </div>
+  );
+}
+```
+
+**⚠️ Performance Caveat**: Each cell/header MUST be its own component to get memoized callback refs. If you create callback refs in a loop or render function, they will be recreated on every render, causing constant cleanup/setup cycles and poor performance.
+
+## When to Use Each Approach
+
+### Use React Hooks (`useSelectionManager` + manual event handlers)
+- **Best for**: Small to medium grids (< 1000 cells)
+- **Pros**: Simple implementation, React-idiomatic, easy debugging
+- **Cons**: Manual event handling, more React re-renders
+- **Example**: Basic data tables, form grids, prototypes
+
+### Use DOM Setup Methods (`setupCellElement`, `setupHeaderElement`)  
+- **Best for**: Large grids (> 1000 cells), performance-critical applications
+- **Pros**: Optimal performance, automatic styling updates, minimal React overhead
+- **Cons**: Requires individual components, more complex setup
+- **Example**: Spreadsheet applications, data visualization, large datasets
+
+## Key Behaviors
+
+### Selection Types
+- **drag**: Normal click-and-drag selection
+- **add**: Ctrl/Cmd+click to add to existing selections  
+- **remove**: Ctrl/Cmd+click on selected area to remove from selection
+- **shift**: Shift+click to extend last selection
+
+### Infinite Grid Support
+- Use `Infinity` as return value from `getNumRows()`/`getNumCols()`
+- Selections can have `Infinity` as end coordinates
+- Visual borders handle infinite ranges appropriately
+
+### Border Colors
+- **Blue (#2196F3)**: Committed selections
+- **Gray (#c5b4b3)**: Current selection being made
+- **Green (#9ec299)**: Active row/column headers
+
+### Multi-Selection
+- Hold Ctrl/Cmd while clicking to add/remove selections
+- Hold Shift while clicking to extend last selection
+- Supports complex selection unions and subtractions
+
+### Whole Row/Column Detection
+- `isWholeRowSelected()`/`isWholeColSelected()` detect when union of selections covers entire row/column
+- Works with both finite and infinite grids
+- Handles overlapping selections correctly

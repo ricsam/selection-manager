@@ -19,16 +19,28 @@ export type IsSelecting =
       type: "drag" | "add" | "remove" | "shift";
     });
 
+export type IsEditing =
+  | {
+      type: "none";
+    }
+  | {
+      type: "cell";
+      row: number;
+      col: number;
+    };
+
 export type SelectionManagerState = {
   hasFocus: boolean;
   selections: SMSelection[];
-  isSelecting?: IsSelecting;
+  isSelecting: IsSelecting;
+  isEditing: IsEditing;
 };
 
 export class SelectionManager {
   hasFocus = false;
   selections: SMSelection[] = [];
   isSelecting: IsSelecting = { type: "none" };
+  isEditing: IsEditing = { type: "none" };
   controlled = false;
 
   key = String(Math.random());
@@ -43,6 +55,7 @@ export class SelectionManager {
       hasFocus: this.hasFocus,
       selections: this.selections,
       isSelecting: this.isSelecting,
+      isEditing: this.isEditing,
     };
   }
 
@@ -58,11 +71,30 @@ export class SelectionManager {
     this.isSelecting = state.isSelecting ?? this.isSelecting;
   }
 
-  eventListeners: ((state: SelectionManagerState) => void)[] = [];
-  listen(callback: (state: SelectionManagerState) => void) {
-    this.eventListeners.push(callback);
+  nextStateListeners: ((state: SelectionManagerState) => void)[] = [];
+  onNextState(callback: (state: SelectionManagerState) => void) {
+    this.nextStateListeners.push(callback);
     return () => {
-      this.eventListeners.splice(this.eventListeners.indexOf(callback), 1);
+      this.nextStateListeners.splice(
+        this.nextStateListeners.indexOf(callback),
+        1,
+      );
+    };
+  }
+
+  /**
+   * Callbacks used to update the state when the state is controlled
+   * These are triggered when a new state has been computed but not yet applied
+   * (i.e. when the state is controlled)
+   */
+  requestedStateListeners: ((state: SelectionManagerState) => void)[] = [];
+  onNewRequestedState(callback: (state: SelectionManagerState) => void) {
+    this.requestedStateListeners.push(callback);
+    return () => {
+      this.requestedStateListeners.splice(
+        this.requestedStateListeners.indexOf(callback),
+        1,
+      );
     };
   }
 
@@ -70,9 +102,12 @@ export class SelectionManager {
     const nextState = this.getState();
 
     if (this.controlled) {
+      // revert the state if it is controlled
       this.setState(this.prevState);
+      this.requestedStateListeners.forEach((listener) => listener(nextState));
+    } else {
+      this.nextStateListeners.forEach((listener) => listener(nextState));
     }
-    this.eventListeners.forEach((listener) => listener(nextState));
   }
 
   prevState: SelectionManagerState = structuredClone(this.getState());
@@ -133,6 +168,39 @@ export class SelectionManager {
     }
     this.isSelecting = { type: "none" };
     this.onUpdate();
+  }
+
+  cellDoubleClick(row: number, col: number) {
+    this.willMaybeUpdate();
+    const shouldUpdate =
+      this.isEditing.type !== "cell" ||
+      this.isEditing.row !== row ||
+      this.isEditing.col !== col;
+
+    if (shouldUpdate) {
+      this.isEditing = {
+        type: "cell",
+        row,
+        col,
+      };
+      this.onUpdate();
+    }
+  }
+
+  cancelEditing() {
+    this.willMaybeUpdate();
+    if (this.isEditing.type === "cell") {
+      this.isEditing = { type: "none" };
+      this.onUpdate();
+    }
+  }
+
+  isEditingCell(row: number, col: number) {
+    return (
+      this.isEditing.type === "cell" &&
+      this.isEditing.row === row &&
+      this.isEditing.col === col
+    );
   }
 
   headerMouseDown(
@@ -284,7 +352,6 @@ export class SelectionManager {
 
     const numRows = this.getNumRows();
     const numCols = this.getNumCols();
-
 
     // Handle infinite selections by using actual table bounds
     const actualEndRow =
@@ -786,16 +853,47 @@ export class SelectionManager {
     return selectionBoxShadow;
   }
 
+  getTopLeftCellInSelection(): { row: number; col: number } | undefined {
+    if (this.selections.length === 0) {
+      return undefined;
+    }
+    let minCell: { row: number; col: number } | undefined;
+    const evaluateCell = (cell: { row: number; col: number }) => {
+      if (!minCell) {
+        minCell = cell;
+        return;
+      }
+      if (cell.col < minCell.col) {
+        minCell = cell;
+      } else if (cell.col === minCell.col && cell.row < minCell.row) {
+        minCell = cell;
+      }
+
+    };
+    this.selections.forEach((selection) => {
+      evaluateCell(selection.start);
+      evaluateCell(selection.end);
+    });
+    return minCell;
+  }
+
   handleKeyDown(event: KeyboardEvent) {
     this.willMaybeUpdate();
     // handle escape key
     if (event.key === "Escape") {
+      if (this.isEditing.type === "cell") {
+        this.cancelEditing();
+        return;
+      }
+
       const current = {
         isSelecting: this.isSelecting,
         selections: this.selections,
+        isEditing: this.isEditing,
       };
       this.isSelecting = { type: "none" };
       this.selections = [];
+      this.isEditing = { type: "none" };
 
       let shouldUpdate = false;
 
@@ -807,6 +905,10 @@ export class SelectionManager {
         shouldUpdate = true;
       }
 
+      if (current.isEditing.type !== "none") {
+        shouldUpdate = true;
+      }
+
       if (this.hasFocus) {
         this.hasFocus = false;
         shouldUpdate = true;
@@ -814,6 +916,18 @@ export class SelectionManager {
 
       if (shouldUpdate) {
         this.onUpdate();
+      }
+      return;
+    }
+
+    if (this.isEditing.type === "cell") {
+      return;
+    }
+
+    if (event.key === "F2") {
+      const cell = this.getTopLeftCellInSelection();
+      if (cell) {
+        this.cellDoubleClick(cell.row, cell.col);
       }
       return;
     }
@@ -1109,6 +1223,184 @@ export class SelectionManager {
         return startRow === 0 && actualEndRow >= numRows - 1;
       }
     }
+  }
+
+  getContainerBoxShadow() {
+    if (this.hasFocus) {
+      return "0 0 0 1px #2196F3";
+    }
+    return undefined;
+  }
+
+  /**
+   * @param el - The cell element to setup.
+   * @param cell - The cell to setup.
+   * @returns A function to cleanup the cell.
+   */
+  setupCellElement(el: HTMLElement, cell: { row: number; col: number }) {
+    const onMouseDown = (e: MouseEvent) => {
+      this.cellMouseDown(cell.row, cell.col, {
+        shiftKey: e.shiftKey,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+      });
+    };
+    const onMouseEnter = (e: MouseEvent) => {
+      this.cellMouseEnter(cell.row, cell.col);
+    };
+    const onMouseUp = (e: MouseEvent) => {
+      this.cellMouseUp(cell.row, cell.col);
+    };
+    const onDoubleClick = (e: MouseEvent) => {
+      this.cellDoubleClick(cell.row, cell.col);
+    };
+    el.addEventListener("mousedown", onMouseDown);
+    el.addEventListener("mouseenter", onMouseEnter);
+    el.addEventListener("mouseup", onMouseUp);
+    el.addEventListener("dblclick", onDoubleClick);
+    const cleanup = this.onNextState(() => {
+      const boxShadow = this.getCellBoxShadow({ row: cell.row, col: cell.col });
+      el.style.boxShadow = boxShadow ?? "";
+    });
+    return () => {
+      el.removeEventListener("mousedown", onMouseDown);
+      el.removeEventListener("mouseenter", onMouseEnter);
+      el.removeEventListener("mouseup", onMouseUp);
+      el.removeEventListener("dblclick", onDoubleClick);
+      cleanup();
+    };
+  }
+
+  /**
+   * @param el - The header element to setup.
+   * @param index - The index of the header.
+   * @param type - The type of header. "row" for row headers, "col" for column headers.
+   * @returns A function to cleanup the header.
+   */
+  setupHeaderElement(el: HTMLElement, index: number, type: "row" | "col") {
+    const onMouseDown = (e: MouseEvent) => {
+      this.headerMouseDown(index, type, {
+        shiftKey: e.shiftKey,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+      });
+    };
+    const onMouseEnter = (e: MouseEvent) => {
+      this.headerMouseEnter(index, type);
+    };
+    const onMouseUp = (e: MouseEvent) => {
+      this.headerMouseUp(index, type);
+    };
+    el.addEventListener("mousedown", onMouseDown);
+    el.addEventListener("mouseenter", onMouseEnter);
+    el.addEventListener("mouseup", onMouseUp);
+    const cleanup = this.onNextState(() => {
+      const boxShadow = this.getHeaderBoxShadow(index, type);
+      el.style.boxShadow = boxShadow ?? "";
+    });
+    return () => {
+      el.removeEventListener("mousedown", onMouseDown);
+      el.removeEventListener("mouseenter", onMouseEnter);
+      el.removeEventListener("mouseup", onMouseUp);
+      cleanup();
+    };
+  }
+
+  observeStateChange<T>(
+    selector: (state: SelectionManagerState) => T,
+    callback: (value: T) => void | (() => void),
+    runInstant?: boolean,
+  ) {
+    let innerCleanup: (() => void) | undefined;
+    let value: { current: T } | undefined;
+    if (runInstant) {
+      const initialValue = selector(this.getState());
+      value = { current: initialValue };
+      const maybeCleanup = callback(initialValue);
+      if (typeof maybeCleanup === "function") {
+        innerCleanup = maybeCleanup;
+      }
+    }
+
+    const runInnerCleanup = () => {
+      if (innerCleanup) {
+        innerCleanup();
+        innerCleanup = undefined;
+      }
+    };
+
+    const cleanup = this.onNextState((state) => {
+      const val = selector(state);
+      if (!value || value.current !== val) {
+        value = { current: val };
+
+        runInnerCleanup();
+
+        const maybeCleanup = callback(val);
+        if (typeof maybeCleanup === "function") {
+          innerCleanup = maybeCleanup;
+        }
+      }
+    });
+    return () => {
+      cleanup();
+      runInnerCleanup();
+    };
+  }
+
+  setupContainerElement(el: HTMLElement) {
+    const cancelSelection = (ev: MouseEvent) => {
+      if (el.contains(ev.target as Node)) {
+        return;
+      }
+      this.cancelSelection();
+    };
+    const onMouseDown = (ev: MouseEvent) => {
+      if (el.contains(ev.target as Node)) {
+        this.focus();
+      } else {
+        this.blur();
+      }
+    };
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (this.hasFocus) {
+        this.handleKeyDown(ev);
+      }
+    };
+
+    const selectionCleanup = this.observeStateChange(
+      (state) => state.isSelecting.type,
+      (type) => {
+        if (type !== "none") {
+          const preventSelection = (e: Event) => {
+            e.preventDefault();
+            document.getSelection()?.empty();
+          };
+          el.addEventListener("selectstart", preventSelection);
+          el.addEventListener("selectionchange", preventSelection);
+          return () => {
+            el.removeEventListener("selectstart", preventSelection);
+            el.removeEventListener("selectionchange", preventSelection);
+          };
+        }
+      },
+      true,
+    );
+
+    window.addEventListener("mouseup", cancelSelection);
+    window.addEventListener("mousedown", onMouseDown);
+    window.addEventListener("keydown", onKeyDown);
+    const boxShadowCleanup = this.onNextState(() => {
+      const boxShadow = this.getContainerBoxShadow();
+      el.style.boxShadow = boxShadow ?? "";
+    });
+    return () => {
+      window.removeEventListener("mouseup", cancelSelection);
+      window.removeEventListener("mousedown", onMouseDown);
+      window.removeEventListener("keydown", onKeyDown);
+      boxShadowCleanup();
+      selectionCleanup();
+    };
   }
 }
 

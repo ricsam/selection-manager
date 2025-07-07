@@ -1,11 +1,11 @@
-import React, { useState, useRef, useEffect } from "react";
-import { useInitializeSelectionManager } from "./src/use-initialize-selection-manager";
-import { useSelectionManager } from "./src/use-selection-manager";
+import React, { useCallback, useState } from "react";
 import {
   SelectionManager,
   type SelectionManagerState,
   type SMSelection,
 } from "./src/selection-manager";
+import { useInitializeSelectionManager } from "./src/use-initialize-selection-manager";
+import { useSelectionManager } from "./src/use-selection-manager";
 
 // Grid component that displays an 8x8 grid (64 cells) with selection support
 interface GridProps {
@@ -23,14 +23,16 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
           selections: selectionManager.selections,
           hasFocus: selectionManager.hasFocus,
           isSelecting: selectionManager.isSelecting,
+          isEditing: selectionManager.isEditing,
         };
       },
     );
 
+    const [values, setValues] = useState<Record<string, string>>({});
+
     const renderCornerCell = () => {
       return (
         <div
-          ref={ref as React.RefObject<HTMLDivElement>}
           key="corner"
           style={{
             width: 40,
@@ -41,7 +43,7 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
             alignItems: "center",
             justifyContent: "center",
             fontSize: "12px",
-            userSelect: "none",
+
             fontWeight: "bold",
           }}
         ></div>
@@ -64,7 +66,7 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
             alignItems: "center",
             justifyContent: "center",
             fontSize: "12px",
-            userSelect: "none",
+
             fontWeight: "bold",
             boxShadow,
           }}
@@ -93,7 +95,7 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
             alignItems: "center",
             justifyContent: "center",
             fontSize: "12px",
-            userSelect: "none",
+
             fontWeight: "bold",
             boxShadow,
           }}
@@ -113,6 +115,9 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
         col,
       });
       const boxShadow = selectionManager.getCellBoxShadow({ row, col });
+      const isEditing = selectionManager.isEditingCell(row, col);
+
+      const value = values[`${row},${col}`] ?? `${row},${col}`;
 
       return (
         <div
@@ -133,13 +138,40 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
             alignItems: "center",
             justifyContent: "center",
             fontSize: "12px",
-            userSelect: "none",
           }}
           onMouseDown={(e) => selectionManager.cellMouseDown(row, col, e)}
           onMouseEnter={() => selectionManager.cellMouseEnter(row, col)}
           onMouseUp={() => selectionManager.cellMouseUp(row, col)}
+          onDoubleClick={(e) => selectionManager.cellDoubleClick(row, col)}
         >
-          {`${row},${col}`}
+          {isEditing ? (
+            <input
+              style={{
+                width: "100%",
+                height: "100%",
+                border: "none",
+                outline: "none",
+                backgroundColor: "transparent",
+              }}
+              type="text"
+              value={value}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  selectionManager.cancelEditing();
+                }
+              }}
+              onBlur={() => selectionManager.cancelEditing()}
+              onChange={(e) => {
+                setValues((prev) => ({
+                  ...prev,
+                  [`${row},${col}`]: e.target.value,
+                }));
+              }}
+            />
+          ) : (
+            value
+          )}
         </div>
       );
     };
@@ -171,11 +203,11 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
           ref={ref}
           tabIndex={0}
           style={{
-            display: "grid",
+            display: "inline-grid",
             gridTemplateColumns: "repeat(9, 40px)", // 1 for row headers + 8 for columns
             gridTemplateRows: "repeat(9, 40px)", // 1 for column headers + 8 for rows
             gap: 0,
-            border: hasFocus ? "2px solid #2196F3" : "2px solid transparent",
+            border: hasFocus ? "2px dotted red" : "2px solid transparent",
             outline: "none",
             padding: 4,
           }}
@@ -235,6 +267,7 @@ function Test2() {
         { start: { row: 4, col: 4 }, end: { row: 5, col: 5 } },
       ],
     },
+    containerElement,
   });
 
   return (
@@ -256,6 +289,7 @@ function Test3() {
       selections: [{ start: { row: 0, col: 0 }, end: { row: 1, col: 7 } }],
       hasFocus: false,
       isSelecting: { type: "none" },
+      isEditing: { type: "none" },
     },
   );
 
@@ -263,6 +297,7 @@ function Test3() {
     getNumRows: () => 8,
     getNumCols: () => 8,
     state: controlledState,
+    containerElement,
   });
 
   return (
@@ -288,7 +323,10 @@ function Test3() {
               },
             ],
             hasFocus: false,
-            isSelecting: undefined,
+            isSelecting: {
+              type: "none",
+            },
+            isEditing: { type: "none" },
           })
         }
         style={{ marginTop: 8, padding: "4px 8px" }}
@@ -300,7 +338,10 @@ function Test3() {
           setControlledState({
             selections: [],
             hasFocus: false,
-            isSelecting: undefined,
+            isSelecting: {
+              type: "none",
+            },
+            isEditing: { type: "none" },
           })
         }
         style={{ marginTop: 8, marginLeft: 8, padding: "4px 8px" }}
@@ -326,6 +367,7 @@ function Test4() {
       console.log("Test 4 - Selection changed:", state);
       setReportedSelections([...state.selections]);
     },
+    containerElement,
   });
 
   return (
@@ -353,6 +395,7 @@ function Test5() {
       selections: [{ start: { row: 3, col: 3 }, end: { row: 3, col: 3 } }],
       hasFocus: false,
       isSelecting: { type: "none" },
+      isEditing: { type: "none" },
     });
 
   const selectionManager = useInitializeSelectionManager({
@@ -363,6 +406,7 @@ function Test5() {
       console.log("Test 5 - Selection changed:", state);
       setFullyControlledState(state);
     },
+    containerElement,
   });
 
   return (
@@ -380,6 +424,7 @@ function Test5() {
             ],
             hasFocus: false,
             isSelecting: { type: "none" },
+            isEditing: { type: "none" },
           })
         }
         style={{ marginTop: 8, padding: "4px 8px" }}
@@ -394,6 +439,7 @@ function Test5() {
             ],
             hasFocus: false,
             isSelecting: { type: "none" },
+            isEditing: { type: "none" },
           })
         }
         style={{ marginTop: 8, marginLeft: 8, padding: "4px 8px" }}
@@ -406,6 +452,7 @@ function Test5() {
             selections: [],
             hasFocus: false,
             isSelecting: { type: "none" },
+            isEditing: { type: "none" },
           })
         }
         style={{ marginTop: 8, marginLeft: 8, padding: "4px 8px" }}
@@ -420,12 +467,232 @@ function Test5() {
   );
 }
 
+// Cell component with useCallback ref for Test6
+const CellComponent = React.memo(
+  ({
+    row,
+    col,
+    selectionManager,
+  }: {
+    row: number;
+    col: number;
+    selectionManager: SelectionManager;
+  }) => {
+    const cellRef = useCallback(
+      (el: HTMLElement | null) => {
+        if (el) {
+          return selectionManager.setupCellElement(el, { row, col });
+        }
+      },
+      [row, col, selectionManager],
+    );
+
+    const isEditing = useSelectionManager(selectionManager, () => {
+      return selectionManager.isEditingCell(row, col);
+    });
+
+    const [value, setValue] = useState<string>(`${row},${col}`);
+
+    return (
+      <div
+        ref={cellRef}
+        className="cell"
+        style={{
+          width: 40,
+          height: 40,
+          border: "1px solid #ddd",
+          backgroundColor: "#fff",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: "12px",
+        }}
+      >
+        {isEditing ? (
+          <input
+            style={{
+              width: "100%",
+              height: "100%",
+              border: "none",
+              outline: "none",
+              backgroundColor: "transparent",
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                selectionManager.cancelEditing();
+              }
+            }}
+            onBlur={() => selectionManager.cancelEditing()}
+            onChange={(e) => setValue(e.target.value)}
+            value={value}
+            autoFocus
+          />
+        ) : (
+          value
+        )}
+      </div>
+    );
+  },
+);
+CellComponent.displayName = "CellComponent";
+
+// Header component with useCallback ref for Test6
+const HeaderComponent = React.memo(
+  ({
+    index,
+    type,
+    selectionManager,
+  }: {
+    index: number;
+    type: "row" | "col";
+    selectionManager: SelectionManager;
+  }) => {
+    const headerRef = useCallback(
+      (el: HTMLElement | null) => {
+        if (el) {
+          return selectionManager.setupHeaderElement(el, index, type);
+        }
+      },
+      [index, type, selectionManager],
+    );
+
+    return (
+      <div
+        ref={headerRef}
+        className={`${type}-header`}
+        style={{
+          width: 40,
+          height: 40,
+          border: "1px solid #ddd",
+          backgroundColor: "#f0f0f0",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: "12px",
+
+          fontWeight: "bold",
+        }}
+      >
+        {index}
+      </div>
+    );
+  },
+);
+HeaderComponent.displayName = "HeaderComponent";
+
+// Corner cell component for Test6
+const CornerCell = React.memo(() => {
+  return (
+    <div
+      style={{
+        width: 40,
+        height: 40,
+        border: "1px solid #ddd",
+        backgroundColor: "#f5f5f5",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontSize: "12px",
+
+        fontWeight: "bold",
+      }}
+    ></div>
+  );
+});
+CornerCell.displayName = "CornerCell";
+
+// Test 6: Using callback refs with setupCellElement and setupHeaderElement
+function Test6() {
+  const [containerElement, setContainerElement] = useState<HTMLElement | null>(
+    null,
+  );
+  const selectionManager = useInitializeSelectionManager({
+    getNumRows: () => 8,
+    getNumCols: () => 8,
+    containerElement,
+  });
+
+  const renderGridContent = () => {
+    const content = [];
+
+    // First row: corner + column headers
+    content.push(<CornerCell key="corner" />);
+    for (let col = 0; col < 8; col++) {
+      content.push(
+        <HeaderComponent
+          key={`col-header-${col}`}
+          index={col}
+          type="col"
+          selectionManager={selectionManager}
+        />,
+      );
+    }
+
+    // Data rows: row header + cells
+    for (let row = 0; row < 8; row++) {
+      content.push(
+        <HeaderComponent
+          key={`row-header-${row}`}
+          index={row}
+          type="row"
+          selectionManager={selectionManager}
+        />,
+      );
+      for (let col = 0; col < 8; col++) {
+        content.push(
+          <CellComponent
+            key={`${row}-${col}`}
+            row={row}
+            col={col}
+            selectionManager={selectionManager}
+          />,
+        );
+      }
+    }
+
+    return content;
+  };
+
+  return (
+    <div style={{ marginBottom: 40 }}>
+      <h3>
+        Test 6: Using Callback Refs with setupCellElement/setupHeaderElement
+      </h3>
+      <div
+        ref={setContainerElement}
+        tabIndex={0}
+        style={{
+          display: "inline-grid",
+          gridTemplateColumns: "repeat(9, 40px)", // 1 for row headers + 8 for columns
+          gridTemplateRows: "repeat(9, 40px)", // 1 for column headers + 8 for rows
+          gap: 0,
+          border: "2px solid transparent",
+          outline: "none",
+          padding: 4,
+        }}
+      >
+        {renderGridContent()}
+      </div>
+      <div style={{ fontSize: "12px", color: "#666", marginTop: 8 }}>
+        <em>
+          This test uses setupCellElement and setupHeaderElement methods
+          directly with callback refs instead of the useSelectionManager hook.
+          The styling and event handling is managed by the SelectionManager
+          automatically.
+        </em>
+      </div>
+    </div>
+  );
+}
+
 export function Demo() {
   return (
     <div style={{ padding: 20, fontFamily: "Arial, sans-serif" }}>
-      <h1>Selection Manager Demo - 5 Test Cases</h1>
+      <h1>Selection Manager Demo - 6 Test Cases</h1>
       <p>
-        This demo shows 5 different ways to use the SelectionManager with an 8x8
+        This demo shows 6 different ways to use the SelectionManager with an 8x8
         grid. Click and drag to select cells. Use Ctrl+click for
         multi-selection, Shift+click to extend. Use arrow keys for keyboard
         navigation when a grid has focus.
@@ -436,6 +703,7 @@ export function Demo() {
       <Test3 />
       <Test4 />
       <Test5 />
+      <Test6 />
     </div>
   );
 }

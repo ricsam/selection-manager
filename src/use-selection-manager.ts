@@ -1,28 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { SelectionManager } from "./selection-manager";
 
-const isShallowEqual = (a: any, b: any) => {
-  if (a === b) {
-    return true;
-  }
-  if (typeof a !== typeof b) {
-    return false;
-  }
-  if (Array.isArray(a) && Array.isArray(b)) {
-    return (
-      a.length === b.length && a.every((value, index) => value === b[index])
-    );
-  }
-  if (typeof a === "object" && a !== null && b !== null) {
-    const aKeys = Object.keys(a);
-    const bKeys = Object.keys(b);
-    return (
-      aKeys.length === bKeys.length && aKeys.every((key) => a[key] === b[key])
-    );
-  }
-  return false;
-};
-
 export function useSelectionManager<T>(
   selectionManager: SelectionManager,
   selector: () => T,
@@ -38,7 +16,7 @@ export function useSelectionManager<T>(
     if (selectionManager.controlled) {
       return;
     }
-    const cleanup = selectionManager.listen(() => {
+    const cleanup = selectionManager.onNextState(() => {
       setState((currentState) => {
         const selector = effectRef.current.selector;
         const newState = selector();

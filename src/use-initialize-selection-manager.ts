@@ -1,8 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   SelectionManager,
   type SelectionManagerState,
 } from "./selection-manager";
+
+const useIsomorphicLayoutEffect =
+  typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export function useInitializeSelectionManager(props: {
   getNumRows?: () => number;
@@ -12,14 +15,16 @@ export function useInitializeSelectionManager(props: {
   onStateChange?: (state: SelectionManagerState) => void;
   containerElement?: HTMLElement | null;
 }): SelectionManager {
+  const onStateChangeRef = useRef(props.onStateChange);
   const [selectionManager] = useState<SelectionManager>(() => {
     const selectionManager = new SelectionManager(
       props.getNumRows ?? (() => Infinity),
       props.getNumCols ?? (() => Infinity),
     );
     selectionManager.setState(props.state ?? props.initialState ?? {});
-    if (props.onStateChange) {
-      selectionManager.listen(props.onStateChange);
+    if (onStateChangeRef.current) {
+      selectionManager.onNextState(onStateChangeRef.current);
+      selectionManager.onNewRequestedState(onStateChangeRef.current);
     }
     return selectionManager;
   });
@@ -27,32 +32,8 @@ export function useInitializeSelectionManager(props: {
   useEffect(() => {
     const containerElement = props.containerElement;
     if (containerElement) {
-      const cancelSelection = (ev: MouseEvent) => {
-        if (containerElement.contains(ev.target as Node)) {
-          return;
-        }
-        selectionManager.cancelSelection();
-      };
-      const onMouseDown = (ev: MouseEvent) => {
-        if (containerElement.contains(ev.target as Node)) {
-          selectionManager.focus();
-        } else {
-          selectionManager.blur();
-        }
-      };
-      const onKeyDown = (ev: KeyboardEvent) => {
-        if (selectionManager.hasFocus) {
-          selectionManager.handleKeyDown(ev);
-        }
-      };
-      window.addEventListener("mouseup", cancelSelection);
-      window.addEventListener("mousedown", onMouseDown);
-      window.addEventListener("keydown", onKeyDown);
-      return () => {
-        window.removeEventListener("mouseup", cancelSelection);
-        window.removeEventListener("mousedown", onMouseDown);
-        window.removeEventListener("keydown", onKeyDown);
-      };
+      const cleanup = selectionManager.setupContainerElement(containerElement);
+      return cleanup;
     }
   }, [props.containerElement, selectionManager]);
 
@@ -80,6 +61,21 @@ export function useInitializeSelectionManager(props: {
   } else {
     selectionManager.controlled = false;
   }
+
+  // we can't start re-rendering other components while this hook is running
+  // (other components that might be have setState callbacks in nextStateListeners)
+  // so we need to use a layout effect
+  useIsomorphicLayoutEffect(() => {
+    if (props.state) {
+      const state = selectionManager.getState();
+      selectionManager.nextStateListeners.forEach((listener) => {
+        if (listener === onStateChangeRef.current) {
+          return;
+        }
+        return listener(state);
+      });
+    }
+  }, [selectionManager, props.state]);
 
   return selectionManager;
 }

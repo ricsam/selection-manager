@@ -11,7 +11,7 @@ describe("SelectionManager", () => {
       () => 10, // getNumRows
       () => 5   // getNumCols
     );
-    selectionManager.listen(updateCallback);
+    selectionManager.onNextState(updateCallback);
   });
 
   describe("Basic Selection", () => {
