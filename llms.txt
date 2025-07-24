@@ -21,6 +21,7 @@ type IsEditing =
 type IsHovering =
   | { type: "none" }
   | { type: "cell"; row: number; col: number }
+  | { type: "group"; group: SMArea }
   | { type: "header"; index: number; headerType: "row" | "col" };
 
 type SelectionManagerState = {
@@ -38,7 +39,8 @@ type SelectionManagerState = {
 ```typescript
 new SelectionManager(
   getNumRows: () => number,    // Can return Infinity
-  getNumCols: () => number     // Can return Infinity
+  getNumCols: () => number,    // Can return Infinity
+  getGroups: () => SMArea[]    // Returns merged/grouped cell areas
 )
 ```
 
@@ -82,6 +84,13 @@ getTopLeftCellInSelection(): { row: number; col: number } | undefined
 getSelectionsBoundingRect(): SMSelection | undefined
 getNonOverlappingSelections(): SMSelection[]
 forEachSelectedCell(callback: (cell: { source: { row: number; col: number }; target: { row: number; col: number } }) => void): void
+```
+
+### Group/Merged Cell Operations
+```typescript
+findGroupContainingCell(cell: { row: number; col: number }): SMArea | undefined
+isHoveringGroup(group: SMArea): boolean
+getBoxShadow(options?: { color?: string; position?: ("top" | "right" | "bottom" | "left" | "all")[] }): string
 ```
 
 ### Visual Styling
@@ -167,7 +176,8 @@ cancelHovering(): void
 ```typescript
 function useInitializeSelectionManager(props: {
   getNumRows?: () => number;                              // Default: () => Infinity
-  getNumCols?: () => number;                              // Default: () => Infinity  
+  getNumCols?: () => number;                              // Default: () => Infinity
+  getGroups?: () => SMArea[];                             // Default: () => []
   initialState?: Partial<SelectionManagerState>;         // Uncontrolled mode
   state?: SelectionManagerState;                          // Controlled mode
   onStateChange?: (state: SelectionManagerState) => void;
@@ -347,3 +357,12 @@ const exportSelection = () => {
 
 ### All Cells Selection Detection
 - `isAllSelected()` checks if union of selections covers all table cells
+
+### Merged Cell Groups
+- Use `getGroups()` callback to define merged/grouped cell areas
+- Groups are `SMArea` objects with same structure as selections
+- Groups are automatically detected during hover
+- `findGroupContainingCell()` returns the group containing a specific cell
+- `isHoveringGroup(group)` checks if currently hovering over a group
+- `getBoxShadow()` provides customizable styling for groups
+- Common pattern: hide non-top-left cells in groups, use CSS Grid to span multiple cells

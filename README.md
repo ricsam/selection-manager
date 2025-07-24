@@ -12,6 +12,7 @@ Transform any grid into an Excel-like powerhouse with intuitive multi-selection,
 - ✏️ **Cell editing** - F2 or double-click for instant editing with smart keyboard handling
 - 🎨 **Visual feedback** - Beautiful borders and shadows that make selections pop
 - 🖱️ **Hover detection** - Know exactly which cells and headers users are hovering over
+- 🔗 **Merged cell support** - Handle grouped/merged cells like a real spreadsheet
 - 📊 **Data export** - Copy/paste TSV like you're in Excel (because why not?)
 - ♾️ **Infinite grids** - Go crazy with millions of rows and columns
 - 🔄 **Real-time updates** - Everything stays in sync, always
@@ -718,6 +719,7 @@ type SelectionManagerState = {
 type IsHovering =
   | { type: "none" }                                    // Not hovering
   | { type: "cell"; row: number; col: number }          // Hovering over this cell
+  | { type: "group"; group: SMArea }                    // Hovering over merged cell group
   | { type: "header"; index: number; headerType: "row" | "col" }; // Hovering over header
 ```
 
@@ -772,6 +774,11 @@ selectionManager.saveCellValue(
   { rowIndex: 2, colIndex: 3 }, 
   "New Value"
 );
+
+// 🔗 Group/merged cell operations
+const group = selectionManager.findGroupContainingCell({ row: 2, col: 3 });
+const isHoveringGroup = selectionManager.isHoveringGroup(group);
+const groupShadow = selectionManager.getBoxShadow({ color: '#4CAF50' });
 ```
 
 ### ✏️ Cell Editing Best Practices
@@ -821,6 +828,67 @@ const EditingCell = ({ row, col, selectionManager, initialValue }) => {
 2. **Always handle `onBlur`**: Cancel editing when the user clicks away
 3. **Use `saveCellValue()`**: This method automatically triggers all `listenToInsertData` listeners
 4. **Handle Enter and Escape**: Standard spreadsheet behavior users expect
+
+### 🔗 Merged Cell Groups (Advanced)
+
+For spreadsheet-like applications with merged cells, SelectionManager supports grouped cells:
+
+```typescript
+const selectionManager = useInitializeSelectionManager({
+  getNumRows: () => 10,
+  getNumCols: () => 5,
+  // 🔗 Define merged cell areas  
+  getGroups: () => {
+    // Return areas that should be treated as merged cells
+    return [
+      { start: { row: 1, col: 1 }, end: { row: 2, col: 3 } }, // 2x3 merged area
+      { start: { row: 5, col: 0 }, end: { row: 5, col: 4 } }, // Merged row
+    ];
+  }
+});
+
+// 🎯 Usage in components
+const GroupedCell = ({ row, col, group, selectionManager }) => {
+  // Only render content in the top-left cell of a group
+  const isTopLeft = group && group.start.row === row && group.start.col === col;
+  
+  const groupBoxShadow = useSelectionManager(selectionManager, () => {
+    return (
+      group &&
+      selectionManager.isHoveringGroup(group) &&
+      selectionManager.getBoxShadow({ color: '#4CAF50' })
+    ) || undefined;
+  });
+
+  if (group && !isTopLeft) {
+    // Hidden cells in merged group
+    return <div style={{ display: 'none' }} />;
+  }
+
+  return (
+    <div
+      style={{
+        // Span multiple cells if this is a group
+        gridRowStart: row + 1,
+        gridRowEnd: group ? group.end.row + 2 : row + 2,
+        gridColumnStart: col + 1, 
+        gridColumnEnd: group ? group.end.col + 2 : col + 2,
+        boxShadow: groupBoxShadow,
+        border: '1px solid #ddd',
+        padding: '8px'
+      }}
+    >
+      {group ? `Merged ${group.end.row - group.start.row + 1}x${group.end.col - group.start.col + 1}` : `${row},${col}`}
+    </div>
+  );
+};
+```
+
+**🎯 Key Patterns:**
+
+- **Dynamic groups**: `getGroups()` can return different areas based on data
+- **Hover detection**: Use `isHoveringGroup(group)` to detect group hovers
+- **Custom styling**: Use `getBoxShadow()` for group-specific visual feedback
 
 ### 🛠️ Utility Functions
 

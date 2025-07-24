@@ -10,6 +10,7 @@ describe("SelectionManager", () => {
     selectionManager = new SelectionManager(
       () => 10, // getNumRows
       () => 5, // getNumCols
+      () => [], // getGroups
     );
     selectionManager.onNextState(updateCallback);
   });
@@ -444,6 +445,7 @@ describe("SelectionManager", () => {
       infiniteSelectionManager = new SelectionManager(
         () => Infinity, // getNumRows
         () => Infinity, // getNumCols
+        () => [], // getGroups
       );
     });
 
