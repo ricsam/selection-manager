@@ -1015,9 +1015,8 @@ function CustomStyledCell({ row, col, selectionManager }) {
 SelectionManager makes building grid interfaces fun instead of frustrating. Whether you're creating a simple data table or the next Excel competitor, we've got the tools to make it happen smoothly.
 
 **Quick links:**
-- 🌟 [Star us on GitHub](your-github-link)
-- 🐛 [Report issues](your-issues-link) 
-- 💬 [Join the discussion](your-discussions-link)
+- 🌟 [Star us on GitHub](https://github.com/ricsam/selection-manager)
+- 🐛 [Report issues](https://github.com/ricsam/selection-manager/issues) 
 
 Now go build something amazing! 🚀✨
 
@@ -1025,4 +1024,4 @@ Now go build something amazing! 🚀✨
 
 ## 📄 License
 
-MIT © [Your Name] - Go wild! 🎊
+MIT © ricsam - Go wild! 🎊
