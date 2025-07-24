@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.3
+
+### Patch Changes
+
+- expand on functionality
+
 ## 0.0.2
 
 ### Patch Changes

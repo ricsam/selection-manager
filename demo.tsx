@@ -2,7 +2,7 @@ import React, { useCallback, useState } from "react";
 import {
   SelectionManager,
   type SelectionManagerState,
-  type SMSelection,
+  type SMArea,
 } from "./src/selection-manager";
 import { useInitializeSelectionManager } from "./src/use-initialize-selection-manager";
 import { useSelectionManager } from "./src/use-selection-manager";
@@ -30,10 +30,76 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
 
     const [values, setValues] = useState<Record<string, string>>({});
 
+    React.useEffect(() => {
+      return selectionManager.listenToInsertData((data) => {
+        data.forEach(({ rowIndex, colIndex, value }) => {
+          setValues((prev) => ({
+            ...prev,
+            [`${rowIndex},${colIndex}`]: value,
+          }));
+        });
+      });
+    }, [selectionManager]);
+
+    React.useEffect(() => {
+      return selectionManager.listenToDelete(() => {
+        const selections = selectionManager.getNonOverlappingSelections();
+        const updates = new Map<string, string>();
+        selections.forEach((selection) => {
+          const { start, end } = selection;
+          for (let row = start.row; row <= end.row; row++) {
+            for (let col = start.col; col <= end.col; col++) {
+              updates.set(`${row},${col}`, "");
+            }
+          }
+        });
+        setValues((prev) => ({
+          ...prev,
+          ...Object.fromEntries(updates),
+        }));
+      });
+    }, [selectionManager]);
+
+    React.useEffect(() => {
+      return selectionManager.listenToCopy((cut) => {
+        const boundingRect = selectionManager.getSelectionsBoundingRect();
+        if (!boundingRect) return;
+
+        // Create grid covering bounding rectangle
+        const gridHeight = boundingRect.end.row - boundingRect.start.row + 1;
+        const gridWidth = boundingRect.end.col - boundingRect.start.col + 1;
+        const grid: string[][] = Array(gridHeight)
+          .fill(null)
+          .map(() => Array(gridWidth).fill(""));
+
+        // Fill grid with selected data using forEachSelectedCell helper
+        selectionManager.forEachSelectedCell(({ source, target }) => {
+          const value =
+            values[`${source.row},${source.col}`] ??
+            `${source.row},${source.col}`;
+          grid[target.row]![target.col] = value;
+        });
+
+        const tsvString = grid.map((row) => row.join("\t")).join("\n");
+        navigator.clipboard.writeText(tsvString);
+        if (cut) {
+          selectionManager.forEachSelectedCell(({ source }) => {
+            setValues((prev) => ({
+              ...prev,
+              [`${source.row},${source.col}`]: "",
+            }));
+          });
+        }
+      });
+    }, [selectionManager, values]);
+
     const renderCornerCell = () => {
       return (
         <div
           key="corner"
+          onMouseEnter={() => {
+            selectionManager.cancelHovering();
+          }}
           style={{
             width: 40,
             height: 40,
@@ -72,7 +138,6 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
           }}
           onMouseDown={(e) => selectionManager.headerMouseDown(col, "col", e)}
           onMouseEnter={() => selectionManager.headerMouseEnter(col, "col")}
-          onMouseUp={() => selectionManager.headerMouseUp(col, "col")}
         >
           {col}
         </div>
@@ -101,7 +166,6 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
           }}
           onMouseDown={(e) => selectionManager.headerMouseDown(row, "row", e)}
           onMouseEnter={() => selectionManager.headerMouseEnter(row, "row")}
-          onMouseUp={() => selectionManager.headerMouseUp(row, "row")}
         >
           {row}
         </div>
@@ -141,7 +205,6 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
           }}
           onMouseDown={(e) => selectionManager.cellMouseDown(row, col, e)}
           onMouseEnter={() => selectionManager.cellMouseEnter(row, col)}
-          onMouseUp={() => selectionManager.cellMouseUp(row, col)}
           onDoubleClick={(e) => selectionManager.cellDoubleClick(row, col)}
         >
           {isEditing ? (
@@ -290,6 +353,7 @@ function Test3() {
       hasFocus: false,
       isSelecting: { type: "none" },
       isEditing: { type: "none" },
+      isHovering: { type: "none" },
     },
   );
 
@@ -327,6 +391,7 @@ function Test3() {
               type: "none",
             },
             isEditing: { type: "none" },
+            isHovering: { type: "none" },
           })
         }
         style={{ marginTop: 8, padding: "4px 8px" }}
@@ -342,6 +407,7 @@ function Test3() {
               type: "none",
             },
             isEditing: { type: "none" },
+            isHovering: { type: "none" },
           })
         }
         style={{ marginTop: 8, marginLeft: 8, padding: "4px 8px" }}
@@ -357,7 +423,7 @@ function Test4() {
   const [containerElement, setContainerElement] = useState<HTMLElement | null>(
     null,
   );
-  const [reportedSelections, setReportedSelections] = useState<SMSelection[]>(
+  const [reportedSelections, setReportedSelections] = useState<SMArea[]>(
     [],
   );
   const selectionManager = useInitializeSelectionManager({
@@ -396,6 +462,7 @@ function Test5() {
       hasFocus: false,
       isSelecting: { type: "none" },
       isEditing: { type: "none" },
+      isHovering: { type: "none" },
     });
 
   const selectionManager = useInitializeSelectionManager({
@@ -425,6 +492,7 @@ function Test5() {
             hasFocus: false,
             isSelecting: { type: "none" },
             isEditing: { type: "none" },
+            isHovering: { type: "none" },
           })
         }
         style={{ marginTop: 8, padding: "4px 8px" }}
@@ -440,6 +508,7 @@ function Test5() {
             hasFocus: false,
             isSelecting: { type: "none" },
             isEditing: { type: "none" },
+            isHovering: { type: "none" },
           })
         }
         style={{ marginTop: 8, marginLeft: 8, padding: "4px 8px" }}
@@ -453,6 +522,7 @@ function Test5() {
             hasFocus: false,
             isSelecting: { type: "none" },
             isEditing: { type: "none" },
+            isHovering: { type: "none" },
           })
         }
         style={{ marginTop: 8, marginLeft: 8, padding: "4px 8px" }}
@@ -583,24 +653,29 @@ const HeaderComponent = React.memo(
 HeaderComponent.displayName = "HeaderComponent";
 
 // Corner cell component for Test6
-const CornerCell = React.memo(() => {
-  return (
-    <div
-      style={{
-        width: 40,
-        height: 40,
-        border: "1px solid #ddd",
-        backgroundColor: "#f5f5f5",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: "12px",
+const CornerCell = React.memo(
+  ({ selectionManager }: { selectionManager: SelectionManager }) => {
+    return (
+      <div
+        onMouseEnter={() => {
+          selectionManager.cancelHovering();
+        }}
+        style={{
+          width: 40,
+          height: 40,
+          border: "1px solid #ddd",
+          backgroundColor: "#f5f5f5",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: "12px",
 
-        fontWeight: "bold",
-      }}
-    ></div>
-  );
-});
+          fontWeight: "bold",
+        }}
+      ></div>
+    );
+  },
+);
 CornerCell.displayName = "CornerCell";
 
 // Test 6: Using callback refs with setupCellElement and setupHeaderElement
@@ -618,7 +693,7 @@ function Test6() {
     const content = [];
 
     // First row: corner + column headers
-    content.push(<CornerCell key="corner" />);
+    content.push(<CornerCell key="corner" selectionManager={selectionManager} />);
     for (let col = 0; col < 8; col++) {
       content.push(
         <HeaderComponent

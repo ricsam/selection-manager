@@ -12,7 +12,7 @@ Arguments:
   fe-folder  Path to the other project
 
 Example:
-  bun link.ts /path/to/components
+  bun link.ts /path/to/project
 `);
   process.exit(0);
 }
@@ -22,27 +22,27 @@ if (process.argv.includes("--help") || process.argv.length < 3) {
   printHelp();
 }
 
-const componentsFolder = process.argv[2];
+const targetProject = process.argv[2];
 
 // Validate feFolder is provided
-if (!componentsFolder) {
-  console.error("Error: components-folder argument is required");
+if (!targetProject) {
+  console.error("Error: project-folder argument is required");
   printHelp();
   process.exit(1);
 }
 
-const packageDir = path.join(
-  componentsFolder,
+const targetDir = path.join(
+  targetProject,
   "node_modules",
   "@ricsam/selection-manager",
 );
 
 await $`
-    rm -rf ${packageDir}
-    mkdir -p ${packageDir}
+    rm -rf ${targetDir}
+    mkdir -p ${targetDir}
 `;
 
-await Bun.file(path.join(packageDir, "package.json")).write(
+await Bun.file(path.join(targetDir, "package.json")).write(
   JSON.stringify({
     name: "@ricsam/selection-manager",
     version: "0.0.1",
@@ -53,9 +53,14 @@ await Bun.file(path.join(packageDir, "package.json")).write(
 );
 
 await $`
-  ln -s ${path.join(__dirname, "src")} ${path.join(packageDir, "src")}
+  ln -s ${path.join(__dirname, "src")} ${path.join(targetDir, "src")}
   rm -rf ${path.join(__dirname, "node_modules", "react")}
-  ln -s ${path.join(componentsFolder, "node_modules", "react")} ${path.join(
+  rm -rf ${path.join(
+    targetProject,
+    "node_modules",
+    ".vite"
+  )}
+  ln -s ${path.join(targetProject, "node_modules", "react")} ${path.join(
     __dirname,
     "node_modules",
     "react",

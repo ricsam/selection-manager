@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   SelectionManager,
   type SelectionManagerState,
+  type SMArea,
 } from "./selection-manager";
 
 const useIsomorphicLayoutEffect =
@@ -14,12 +15,14 @@ export function useInitializeSelectionManager(props: {
   state?: SelectionManagerState;
   onStateChange?: (state: SelectionManagerState) => void;
   containerElement?: HTMLElement | null;
+  getGroups?: () => SMArea[];
 }): SelectionManager {
   const onStateChangeRef = useRef(props.onStateChange);
   const [selectionManager] = useState<SelectionManager>(() => {
     const selectionManager = new SelectionManager(
       props.getNumRows ?? (() => Infinity),
       props.getNumCols ?? (() => Infinity),
+      props.getGroups ?? (() => []),
     );
     selectionManager.setState(props.state ?? props.initialState ?? {});
     if (onStateChangeRef.current) {

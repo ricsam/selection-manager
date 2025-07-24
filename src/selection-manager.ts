@@ -1,4 +1,6 @@
-export type SMSelection = {
+import { parseCSVContent } from "./utils";
+
+export type SMArea = {
   start: { row: number; col: number };
   end: { row: number; col: number };
 };
@@ -15,7 +17,7 @@ export type IsSelecting =
   | {
       type: "none";
     }
-  | (SMSelection & {
+  | (SMArea & {
       type: "drag" | "add" | "remove" | "shift";
     });
 
@@ -31,23 +33,45 @@ export type IsEditing =
 
 export type SelectionManagerState = {
   hasFocus: boolean;
-  selections: SMSelection[];
+  selections: SMArea[];
   isSelecting: IsSelecting;
   isEditing: IsEditing;
+  isHovering: IsHovering;
 };
+
+type IsHovering =
+  | {
+      type: "none";
+    }
+  | {
+      type: "cell";
+      row: number;
+      col: number;
+    }
+  | {
+      type: "group";
+      group: SMArea;
+    }
+  | {
+      type: "header";
+      index: number;
+      headerType: "row" | "col";
+    };
 
 export class SelectionManager {
   hasFocus = false;
-  selections: SMSelection[] = [];
+  selections: SMArea[] = [];
   isSelecting: IsSelecting = { type: "none" };
   isEditing: IsEditing = { type: "none" };
+  isHovering: IsHovering = { type: "none" };
   controlled = false;
 
   key = String(Math.random());
 
   constructor(
-    private getNumRows: () => number,
-    private getNumCols: () => number,
+    public getNumRows: () => number,
+    public getNumCols: () => number,
+    public getGroups: () => SMArea[],
   ) {}
 
   getState(): SelectionManagerState {
@@ -56,6 +80,7 @@ export class SelectionManager {
       selections: this.selections,
       isSelecting: this.isSelecting,
       isEditing: this.isEditing,
+      isHovering: this.isHovering,
     };
   }
 
@@ -69,6 +94,7 @@ export class SelectionManager {
     this.hasFocus = state.hasFocus ?? this.hasFocus;
     this.selections = state.selections ?? this.selections;
     this.isSelecting = state.isSelecting ?? this.isSelecting;
+    this.isHovering = state.isHovering ?? this.isHovering;
   }
 
   nextStateListeners: ((state: SelectionManagerState) => void)[] = [];
@@ -148,25 +174,51 @@ export class SelectionManager {
     this.onUpdate();
   }
 
+  isCellInDragArea(cell: { row: number; col: number }) {
+    const { row, col } = cell;
+    if (this.isSelecting.type === "none") {
+      return false;
+    }
+    if (this.isSelecting.type === "remove") {
+      return false;
+    }
+    const startRow = Math.min(
+      this.isSelecting.start.row,
+      this.isSelecting.end.row,
+    );
+    const endRow = Math.max(
+      this.isSelecting.start.row,
+      this.isSelecting.end.row,
+    );
+    const startCol = Math.min(
+      this.isSelecting.start.col,
+      this.isSelecting.end.col,
+    );
+    const endCol = Math.max(
+      this.isSelecting.start.col,
+      this.isSelecting.end.col,
+    );
+
+    const isInDragArea =
+      row >= startRow && row <= endRow && col >= startCol && col <= endCol;
+    return isInDragArea;
+  }
+
+  findGroupContainingCell(cell: { row: number; col: number }) {
+    return this.getGroups().find((group) => this.cellInSelection(cell, group));
+  }
+
   cellMouseEnter(row: number, col: number) {
     this.willMaybeUpdate();
     if (this.isSelecting.type !== "none") {
       this.isSelecting.end = { row, col };
-      this.onUpdate();
     }
-  }
-
-  cellMouseUp(row: number, col: number) {
-    this.willMaybeUpdate();
-    if (this.isSelecting.type !== "none") {
-      this.isSelecting.end = { row, col };
-      if (this.isSelecting.type === "remove") {
-        this.deselectArea(this.isSelecting);
-      } else {
-        this.selections.push(this.isSelecting);
-      }
+    const group = this.findGroupContainingCell({ row, col });
+    if (group) {
+      this.isHovering = { type: "group", group };
+    } else {
+      this.isHovering = { type: "cell", row, col };
     }
-    this.isSelecting = { type: "none" };
     this.onUpdate();
   }
 
@@ -274,29 +326,8 @@ export class SelectionManager {
       } else {
         this.isSelecting.end = { row: actualEndRow, col: index };
       }
-      this.onUpdate();
     }
-  }
-
-  headerMouseUp(index: number, type: "row" | "col") {
-    this.willMaybeUpdate();
-    const actualEndCol =
-      this.getNumCols() === Infinity ? Infinity : this.getNumCols() - 1;
-    const actualEndRow =
-      this.getNumRows() === Infinity ? Infinity : this.getNumRows() - 1;
-    if (this.isSelecting.type !== "none") {
-      if (type === "row") {
-        this.isSelecting.end = { row: index, col: actualEndCol };
-      } else {
-        this.isSelecting.end = { row: actualEndRow, col: index };
-      }
-      if (this.isSelecting.type === "remove") {
-        this.deselectArea(this.isSelecting);
-      } else {
-        this.selections.push(this.isSelecting);
-      }
-    }
-    this.isSelecting = { type: "none" };
+    this.isHovering = { type: "header", index, headerType: type };
     this.onUpdate();
   }
 
@@ -315,17 +346,11 @@ export class SelectionManager {
     return numCols === Infinity ? Infinity : numCols - 1;
   }
 
-  normalizeSelection(selection: SMSelection) {
+  normalizeSelection(selection: SMArea) {
     return {
       start: {
-        row:
-          selection.start.row === Infinity
-            ? this.getActualEndRow()
-            : selection.start.row,
-        col:
-          selection.start.col === Infinity
-            ? this.getActualEndCol()
-            : selection.start.col,
+        row: selection.start.row,
+        col: selection.start.col,
       },
       end: {
         row:
@@ -342,7 +367,7 @@ export class SelectionManager {
 
   cellInSelection(
     cell: { row: number; col: number },
-    selection: SMSelection,
+    selection: SMArea,
   ): boolean {
     const { start, end } = selection;
     const startRow = Math.min(start.row, end.row);
@@ -375,8 +400,8 @@ export class SelectionManager {
     );
   }
 
-  deselectArea(areaToDeselect: SMSelection) {
-    const newSelections: SMSelection[] = [];
+  deselectArea(areaToDeselect: SMArea) {
+    const newSelections: SMArea[] = [];
 
     this.selections.forEach((selection) => {
       // Check if this selection overlaps with the area to deselect
@@ -396,7 +421,7 @@ export class SelectionManager {
     this.selections = newSelections;
   }
 
-  private selectionsOverlap(a: SMSelection, b: SMSelection): boolean {
+  private selectionsOverlap(a: SMArea, b: SMArea): boolean {
     const aMinRow = Math.min(a.start.row, a.end.row);
     const aMaxRow = Math.max(a.start.row, a.end.row);
     const aMinCol = Math.min(a.start.col, a.end.col);
@@ -415,10 +440,7 @@ export class SelectionManager {
     );
   }
 
-  private subtractSelection(
-    original: SMSelection,
-    toRemove: SMSelection,
-  ): SMSelection[] {
+  private subtractSelection(original: SMArea, toRemove: SMArea): SMArea[] {
     const origMinRow = Math.min(original.start.row, original.end.row);
     const origMaxRow = Math.max(original.start.row, original.end.row);
     const origMinCol = Math.min(original.start.col, original.end.col);
@@ -429,7 +451,7 @@ export class SelectionManager {
     const removeMinCol = Math.min(toRemove.start.col, toRemove.end.col);
     const removeMaxCol = Math.max(toRemove.start.col, toRemove.end.col);
 
-    const remaining: SMSelection[] = [];
+    const remaining: SMArea[] = [];
 
     // Top rectangle (above the removed area)
     if (origMinRow < removeMinRow) {
@@ -492,6 +514,108 @@ export class SelectionManager {
     return this.selections.some((selection) =>
       this.cellInSelection(cell, selection),
     );
+  }
+
+  isAllSelected() {
+    if (this.selections.length === 0) {
+      return false;
+    }
+
+    const numRows = this.getNumRows();
+    const numCols = this.getNumCols();
+
+    // For infinite tables, check if there's a selection covering (0,0) to (Infinity, Infinity)
+    if (numRows === Infinity || numCols === Infinity) {
+      return this.selections.some((selection) => {
+        const startRow = Math.min(selection.start.row, selection.end.row);
+        const endRow = Math.max(selection.start.row, selection.end.row);
+        const startCol = Math.min(selection.start.col, selection.end.col);
+        const endCol = Math.max(selection.start.col, selection.end.col);
+
+        return (
+          startRow === 0 &&
+          startCol === 0 &&
+          endRow === Infinity &&
+          endCol === Infinity
+        );
+      });
+    }
+
+    // For finite tables, normalize selections and handle infinity values
+    const normalizedSelections = this.selections.map((selection) => {
+      const startRow = Math.min(selection.start.row, selection.end.row);
+      const endRow = Math.max(selection.start.row, selection.end.row);
+      const startCol = Math.min(selection.start.col, selection.end.col);
+      const endCol = Math.max(selection.start.col, selection.end.col);
+
+      return {
+        startRow,
+        endRow: endRow === Infinity ? numRows - 1 : endRow,
+        startCol,
+        endCol: endCol === Infinity ? numCols - 1 : endCol,
+      };
+    });
+
+    // Quick check: if any single selection covers the entire table
+    for (const sel of normalizedSelections) {
+      if (
+        sel.startRow === 0 &&
+        sel.startCol === 0 &&
+        sel.endRow === numRows - 1 &&
+        sel.endCol === numCols - 1
+      ) {
+        return true;
+      }
+    }
+
+    // Use coordinate compression to check if union covers entire table
+    const rowBoundaries = new Set<number>([0, numRows]);
+    const colBoundaries = new Set<number>([0, numCols]);
+
+    normalizedSelections.forEach((sel) => {
+      rowBoundaries.add(sel.startRow);
+      rowBoundaries.add(sel.endRow + 1); // +1 for exclusive end boundary
+      colBoundaries.add(sel.startCol);
+      colBoundaries.add(sel.endCol + 1); // +1 for exclusive end boundary
+    });
+
+    const sortedRows = Array.from(rowBoundaries).sort((a, b) => a - b);
+    const sortedCols = Array.from(colBoundaries).sort((a, b) => a - b);
+
+    // Check if every rectangular region within the table bounds is covered
+    for (let i = 0; i < sortedRows.length - 1; i++) {
+      for (let j = 0; j < sortedCols.length - 1; j++) {
+        const regionStartRow = sortedRows[i]!;
+        const regionEndRow = sortedRows[i + 1]! - 1; // Convert back to inclusive
+        const regionStartCol = sortedCols[j]!;
+        const regionEndCol = sortedCols[j + 1]! - 1; // Convert back to inclusive
+
+        // Skip regions outside the table bounds
+        if (regionStartRow >= numRows || regionStartCol >= numCols) {
+          continue;
+        }
+
+        // Clip region to table bounds
+        const clippedEndRow = Math.min(regionEndRow, numRows - 1);
+        const clippedEndCol = Math.min(regionEndCol, numCols - 1);
+
+        // Check if this region is covered by any normalized selection
+        const isCovered = normalizedSelections.some((sel) => {
+          return (
+            sel.startRow <= regionStartRow &&
+            sel.endRow >= clippedEndRow &&
+            sel.startCol <= regionStartCol &&
+            sel.endCol >= clippedEndCol
+          );
+        });
+
+        if (!isCovered) {
+          return false;
+        }
+      }
+    }
+
+    return true;
   }
 
   selectionBorders(cell: { row: number; col: number }): Border[] {
@@ -633,9 +757,56 @@ export class SelectionManager {
       }
     });
 
+    if (
+      this.isHovering.type === "cell" &&
+      this.isHovering.row === cell.row &&
+      this.isHovering.col === cell.col
+    ) {
+      if (!this.isCellInDragArea(cell)) {
+        selectionShadows.push(
+          `inset 0 2px 0 0 #9ec299`, // top
+          `inset -2px 0 0 0 #9ec299`, // left
+          `inset 2px 0 0 0 #9ec299`, // right
+          `inset 0 -2px 0 0 #9ec299`, // bottom
+        );
+      }
+    }
+
     const selectionBoxShadow =
       selectionShadows.length > 0 ? selectionShadows.join(", ") : undefined;
     return selectionBoxShadow;
+  }
+
+  getBoxShadow(options?: {
+    color?: string;
+    position?: ("top" | "right" | "bottom" | "left" | "all")[];
+  }) {
+    const color = options?.color ?? "#9ec299";
+    const positions = options?.position ?? ["all"];
+    const shadows: string[] = [];
+    if (positions.includes("all") || positions.includes("top")) {
+      shadows.push(`inset 0 2px 0 0 ${color}`);
+    }
+    if (positions.includes("all") || positions.includes("right")) {
+      shadows.push(`inset -2px 0 0 0 ${color}`);
+    }
+    if (positions.includes("all") || positions.includes("bottom")) {
+      shadows.push(`inset 0 -2px 0 0 ${color}`);
+    }
+    if (positions.includes("all") || positions.includes("left")) {
+      shadows.push(`inset 2px 0 0 0 ${color}`);
+    }
+    return shadows.join(", ");
+  }
+
+  isHoveringGroup(group: SMArea) {
+    return (
+      this.isHovering.type === "group" &&
+      this.isHovering.group.start.row >= group.start.row &&
+      this.isHovering.group.end.row <= group.end.row &&
+      this.isHovering.group.start.col >= group.start.col &&
+      this.isHovering.group.end.col <= group.end.col
+    );
   }
 
   private getIntervalsForIndex(
@@ -848,6 +1019,47 @@ export class SelectionManager {
       }
     }
 
+    if (
+      (this.isHovering.type === "cell" &&
+        (type === "row"
+          ? this.isHovering.row === index
+          : this.isHovering.col === index)) ||
+      (this.isHovering.type === "header" &&
+        this.isHovering.headerType === type &&
+        this.isHovering.index === index)
+    ) {
+      if (type === "row") {
+        selectionShadows.push(`inset -2px 0 0 0 #9ec299`); // border right
+      } else {
+        selectionShadows.push(`inset 0 -2px 0 0 #9ec299`); // border bottom
+      }
+    } else if (
+      this.isHovering.type === "header" &&
+      this.isHovering.headerType !== type
+    ) {
+      if (type === "row") {
+        selectionShadows.push(`inset -2px 0 0 0 #9ec299`); // border right
+      } else {
+        selectionShadows.push(`inset 0 -2px 0 0 #9ec299`); // border bottom
+      }
+    } else if (this.isHovering.type === "group") {
+      if (type === "row") {
+        if (
+          index >= this.isHovering.group.start.row &&
+          index <= this.isHovering.group.end.row
+        ) {
+          selectionShadows.push(`inset -2px 0 0 0 #9ec299`); // border right
+        }
+      } else {
+        if (
+          index >= this.isHovering.group.start.col &&
+          index <= this.isHovering.group.end.col
+        ) {
+          selectionShadows.push(`inset 0 -2px 0 0 #9ec299`); // border bottom
+        }
+      }
+    }
+
     const selectionBoxShadow =
       selectionShadows.length > 0 ? selectionShadows.join(", ") : undefined;
     return selectionBoxShadow;
@@ -868,13 +1080,121 @@ export class SelectionManager {
       } else if (cell.col === minCell.col && cell.row < minCell.row) {
         minCell = cell;
       }
-
     };
     this.selections.forEach((selection) => {
       evaluateCell(selection.start);
       evaluateCell(selection.end);
     });
     return minCell;
+  }
+
+  /**
+   * Returns the bounding rectangle that encompasses all current selections.
+   * @returns SMSelection representing the bounding rectangle, or undefined if no selections exist
+   */
+  getSelectionsBoundingRect(): SMArea | undefined {
+    if (this.selections.length === 0) {
+      return undefined;
+    }
+
+    let minRow = Infinity;
+    let maxRow = -Infinity;
+    let minCol = Infinity;
+    let maxCol = -Infinity;
+
+    this.selections.forEach((selection) => {
+      const startRow = Math.min(selection.start.row, selection.end.row);
+      const endRow = Math.max(selection.start.row, selection.end.row);
+      const startCol = Math.min(selection.start.col, selection.end.col);
+      const endCol = Math.max(selection.start.col, selection.end.col);
+
+      // Handle infinite selections by using actual table bounds
+      const actualEndRow =
+        endRow === Infinity ? this.getActualEndRow() : endRow;
+      const actualEndCol =
+        endCol === Infinity ? this.getActualEndCol() : endCol;
+
+      minRow = Math.min(minRow, startRow);
+      maxRow = Math.max(maxRow, actualEndRow);
+      minCol = Math.min(minCol, startCol);
+      maxCol = Math.max(maxCol, actualEndCol);
+    });
+
+    return {
+      start: { row: minRow, col: minCol },
+      end: { row: maxRow, col: maxCol },
+    };
+  }
+
+  /**
+   * Returns a list of non-overlapping selections that cover the same cells as the current selections.
+   * Uses coordinate compression to decompose overlapping rectangles.
+   * @returns Array of SMSelection representing non-overlapping selections
+   */
+  getNonOverlappingSelections(): SMArea[] {
+    if (this.selections.length === 0) {
+      return [];
+    }
+
+    // Normalize all selections and handle infinite values
+    const normalizedSelections = this.selections.map((selection) => {
+      const startRow = Math.min(selection.start.row, selection.end.row);
+      const endRow = Math.max(selection.start.row, selection.end.row);
+      const startCol = Math.min(selection.start.col, selection.end.col);
+      const endCol = Math.max(selection.start.col, selection.end.col);
+
+      return {
+        startRow,
+        endRow: endRow === Infinity ? this.getActualEndRow() : endRow,
+        startCol,
+        endCol: endCol === Infinity ? this.getActualEndCol() : endCol,
+      };
+    });
+
+    // Collect all unique row and column boundaries
+    const rowBoundaries = new Set<number>();
+    const colBoundaries = new Set<number>();
+
+    normalizedSelections.forEach((sel) => {
+      rowBoundaries.add(sel.startRow);
+      rowBoundaries.add(sel.endRow + 1); // +1 for exclusive end boundary
+      colBoundaries.add(sel.startCol);
+      colBoundaries.add(sel.endCol + 1); // +1 for exclusive end boundary
+    });
+
+    const sortedRows = Array.from(rowBoundaries).sort((a, b) => a - b);
+    const sortedCols = Array.from(colBoundaries).sort((a, b) => a - b);
+
+    const result: SMArea[] = [];
+
+    // For each rectangular region between boundaries
+    for (let i = 0; i < sortedRows.length - 1; i++) {
+      for (let j = 0; j < sortedCols.length - 1; j++) {
+        const regionStartRow = sortedRows[i]!;
+        const regionEndRow = sortedRows[i + 1]! - 1; // Convert back to inclusive
+        const regionStartCol = sortedCols[j]!;
+        const regionEndCol = sortedCols[j + 1]! - 1; // Convert back to inclusive
+
+        // Check if any original selection covers this region
+        const isCovered = normalizedSelections.some((sel) => {
+          return (
+            sel.startRow <= regionStartRow &&
+            sel.endRow >= regionEndRow &&
+            sel.startCol <= regionStartCol &&
+            sel.endCol >= regionEndCol
+          );
+        });
+
+        if (isCovered) {
+          result.push({
+            start: { row: regionStartRow, col: regionStartCol },
+            end: { row: regionEndRow, col: regionEndCol },
+          });
+        }
+      }
+    }
+
+    return result;
   }
 
   handleKeyDown(event: KeyboardEvent) {
@@ -921,6 +1241,37 @@ export class SelectionManager {
     }
 
     if (this.isEditing.type === "cell") {
+      return;
+    }
+
+    // handle copy (Ctrl+C/Cmd+C) and cut (Ctrl+X/Cmd+X)
+    if (
+      (event.metaKey || event.ctrlKey) &&
+      (event.key === "c" || event.key === "C")
+    ) {
+      if (this.hasSelection()) {
+        event.preventDefault();
+        this.listenToCopyListeners.forEach((listener) => listener(false)); // false for copy
+      }
+      return;
+    }
+
+    if (
+      (event.metaKey || event.ctrlKey) &&
+      (event.key === "x" || event.key === "X")
+    ) {
+      if (this.hasSelection()) {
+        event.preventDefault();
+        this.listenToCopyListeners.forEach((listener) => listener(true)); // true for cut
+      }
+      return;
+    }
+
+    if (event.key === "Delete" || event.key === "Backspace") {
+      if (this.hasSelection()) {
+        event.preventDefault();
+        this.listenToDeleteListeners.forEach((listener) => listener());
+      }
       return;
     }
 
@@ -1073,6 +1424,8 @@ export class SelectionManager {
       }
 
       if (shouldUpdate) {
+        event.preventDefault();
+        console.log("shouldUpdate", shouldUpdate);
         this.onUpdate();
       }
       return;
@@ -1138,6 +1491,98 @@ export class SelectionManager {
     return tsvRows.join("\n");
   }
 
+  forEachSelectedCell(
+    callback: (cell: {
+      source: { row: number; col: number };
+      target: { row: number; col: number };
+    }) => void,
+  ) {
+    const selections = this.getNonOverlappingSelections();
+    const boundingRect = this.getSelectionsBoundingRect();
+    if (!boundingRect) return;
+
+    // Check for infinite selections
+    if (
+      boundingRect.end.row === Infinity ||
+      boundingRect.end.col === Infinity
+    ) {
+      throw new Error("Cannot iterate over infinite selections");
+    }
+
+    for (const selection of selections) {
+      if (selection.end.row === Infinity || selection.end.col === Infinity) {
+        throw new Error("Cannot iterate over infinite selections");
+      }
+    }
+
+    selections.forEach((selection) => {
+      for (let row = selection.start.row; row <= selection.end.row; row++) {
+        for (let col = selection.start.col; col <= selection.end.col; col++) {
+          callback({
+            source: { row, col },
+            target: {
+              row: row - boundingRect.start.row,
+              col: col - boundingRect.start.col,
+            },
+          });
+        }
+      }
+    });
+  }
+
+  private listenToCopyListeners: ((cut: boolean) => void)[] = [];
+  listenToCopy(callback: (cut: boolean) => void) {
+    this.listenToCopyListeners.push(callback);
+    return () => {
+      this.listenToCopyListeners = this.listenToCopyListeners.filter(
+        (l) => l !== callback,
+      );
+    };
+  }
+
+  private listenToDeleteListeners: (() => void)[] = [];
+  listenToDelete(callback: () => void) {
+    this.listenToDeleteListeners.push(callback);
+    return () => {
+      this.listenToCopyListeners = this.listenToCopyListeners.filter(
+        (l) => l !== callback,
+      );
+    };
+  }
+
+  private listenToInsertDataListeners: ((
+    updates: { rowIndex: number; colIndex: number; value: string }[],
+  ) => void)[] = [];
+  listenToInsertData(
+    callback: (
+      data: { rowIndex: number; colIndex: number; value: string }[],
+    ) => void,
+  ) {
+    this.listenToInsertDataListeners.push(callback);
+    return () => {
+      this.listenToInsertDataListeners =
+        this.listenToInsertDataListeners.filter((l) => l !== callback);
+    };
+  }
+
+  public saveCellValue(
+    cell: { rowIndex: number; colIndex: number },
+    value: string,
+  ) {
+    this.listenToInsertDataListeners.forEach((listener) => {
+      listener([{ rowIndex: cell.rowIndex, colIndex: cell.colIndex, value }]);
+      this.onUpdate();
+    });
+  }
+
+  public saveCellValues(
+    updates: { rowIndex: number; colIndex: number; value: string }[],
+  ) {
+    this.listenToInsertDataListeners.forEach((listener) => {
+      listener(updates);
+    });
+  }
+
   hasSelection() {
     return this.selections.length > 0;
   }
@@ -1158,6 +1603,12 @@ export class SelectionManager {
     if (prev !== this.hasFocus) {
       this.onUpdate();
     }
+  }
+
+  cancelHovering() {
+    this.willMaybeUpdate();
+    this.isHovering = { type: "none" };
+    this.onUpdate();
   }
 
   private currentSelectionCoversWholeIndex(
@@ -1248,26 +1699,33 @@ export class SelectionManager {
     const onMouseEnter = (e: MouseEvent) => {
       this.cellMouseEnter(cell.row, cell.col);
     };
-    const onMouseUp = (e: MouseEvent) => {
-      this.cellMouseUp(cell.row, cell.col);
-    };
+
     const onDoubleClick = (e: MouseEvent) => {
       this.cellDoubleClick(cell.row, cell.col);
     };
     el.addEventListener("mousedown", onMouseDown);
     el.addEventListener("mouseenter", onMouseEnter);
-    el.addEventListener("mouseup", onMouseUp);
     el.addEventListener("dblclick", onDoubleClick);
-    const cleanup = this.onNextState(() => {
-      const boxShadow = this.getCellBoxShadow({ row: cell.row, col: cell.col });
+
+    const setupBoxShadow = () => {
+      const boxShadow = this.getCellBoxShadow({
+        row: cell.row,
+        col: cell.col,
+      });
       el.style.boxShadow = boxShadow ?? "";
-    });
+    };
+    setupBoxShadow();
+
+    const cleanups = [
+      this.onNextState(() => {
+        setupBoxShadow();
+      }),
+    ];
     return () => {
       el.removeEventListener("mousedown", onMouseDown);
       el.removeEventListener("mouseenter", onMouseEnter);
-      el.removeEventListener("mouseup", onMouseUp);
       el.removeEventListener("dblclick", onDoubleClick);
-      cleanup();
+      cleanups.forEach((cleanup) => cleanup());
     };
   }
 
@@ -1288,21 +1746,22 @@ export class SelectionManager {
     const onMouseEnter = (e: MouseEvent) => {
       this.headerMouseEnter(index, type);
     };
-    const onMouseUp = (e: MouseEvent) => {
-      this.headerMouseUp(index, type);
-    };
     el.addEventListener("mousedown", onMouseDown);
     el.addEventListener("mouseenter", onMouseEnter);
-    el.addEventListener("mouseup", onMouseUp);
-    const cleanup = this.onNextState(() => {
+    const setupBoxShadow = () => {
       const boxShadow = this.getHeaderBoxShadow(index, type);
       el.style.boxShadow = boxShadow ?? "";
-    });
+    };
+    setupBoxShadow();
+    const cleanups = [
+      this.onNextState(() => {
+        setupBoxShadow();
+      }),
+    ];
     return () => {
       el.removeEventListener("mousedown", onMouseDown);
       el.removeEventListener("mouseenter", onMouseEnter);
-      el.removeEventListener("mouseup", onMouseUp);
-      cleanup();
+      cleanups.forEach((cleanup) => cleanup());
     };
   }
 
@@ -1348,12 +1807,96 @@ export class SelectionManager {
     };
   }
 
-  setupContainerElement(el: HTMLElement) {
-    const cancelSelection = (ev: MouseEvent) => {
-      if (el.contains(ev.target as Node)) {
-        return;
+  private insertParsedData(
+    content: string,
+    startPosition?: { row: number; col: number },
+  ) {
+    const data = parseCSVContent(content);
+    const updates: { value: string; rowIndex: number; colIndex: number }[] = [];
+
+    // Get starting position for paste
+    const firstCell = startPosition ??
+      this.getTopLeftCellInSelection() ?? { row: 0, col: 0 };
+    const startRow = firstCell.row;
+    const startCol = firstCell.col;
+
+    data.forEach((cellData) => {
+      const targetRow = startRow + cellData.rowIndex;
+      const targetCol = startCol + cellData.colIndex;
+
+      // Check bounds if limits are specified
+      if (this.getNumRows() && targetRow >= this.getNumRows()) return;
+      if (this.getNumCols() && targetCol >= this.getNumCols()) return;
+
+      updates.push({
+        value: cellData.value,
+        rowIndex: targetRow,
+        colIndex: targetCol,
+      });
+    });
+
+    this.listenToInsertDataListeners.forEach((listener) => listener(updates));
+  }
+
+  handleDrop(ev: DragEvent) {
+    if (!this.hasFocus) return;
+    ev.preventDefault();
+
+    const files = Array.from(ev.dataTransfer?.files ?? []);
+    const file = files.find(
+      (f) => f.name.endsWith(".csv") || f.name.endsWith(".tsv"),
+    );
+
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      if (!content) return;
+
+      this.insertParsedData(content);
+    };
+
+    reader.readAsText(file);
+  }
+
+  handlePaste(ev: ClipboardEvent) {
+    // Only handle paste when focused and not editing
+    if (!this.hasFocus || this.isEditing.type !== "none") return;
+
+    if (!this.hasSelection()) return;
+
+    ev.preventDefault();
+    const text = ev.clipboardData?.getData("text/plain");
+    if (!text) return;
+
+    this.insertParsedData(text);
+  }
+
+  mouseUp() {
+    this.willMaybeUpdate();
+    if (this.isSelecting.type !== "none") {
+      if (this.isSelecting.type === "remove") {
+        this.deselectArea(this.isSelecting);
+      } else {
+        this.selections.push(this.isSelecting);
       }
-      this.cancelSelection();
+    }
+    this.isSelecting = { type: "none" };
+    this.onUpdate();
+  }
+
+  isHoveringCell(row: number, col: number) {
+    return (
+      this.isHovering.type === "cell" &&
+      this.isHovering.row === row &&
+      this.isHovering.col === col
+    );
+  }
+
+  setupContainerElement(el: HTMLElement) {
+    const onMouseUp = (ev: MouseEvent) => {
+      this.mouseUp();
     };
     const onMouseDown = (ev: MouseEvent) => {
       if (el.contains(ev.target as Node)) {
@@ -1366,6 +1909,29 @@ export class SelectionManager {
       if (this.hasFocus) {
         this.handleKeyDown(ev);
       }
+    };
+
+    const handlePaste = (ev: ClipboardEvent) => {
+      if (this.hasFocus) {
+        this.handlePaste(ev);
+      }
+    };
+
+    const handleDragOver = (ev: DragEvent) => {
+      this.focus();
+      ev.preventDefault();
+    };
+
+    const handleDrop = (ev: DragEvent) => {
+      if (this.hasFocus) {
+        this.handleDrop(ev);
+      }
+    };
+
+    const handleMouseLeave = (ev: MouseEvent) => {
+      this.willMaybeUpdate();
+      this.isHovering = { type: "none" };
+      this.onUpdate();
     };
 
     const selectionCleanup = this.observeStateChange(
@@ -1387,17 +1953,25 @@ export class SelectionManager {
       true,
     );
 
-    window.addEventListener("mouseup", cancelSelection);
+    window.addEventListener("mouseup", onMouseUp);
     window.addEventListener("mousedown", onMouseDown);
     window.addEventListener("keydown", onKeyDown);
+    document.addEventListener("paste", handlePaste);
+    el.addEventListener("dragover", handleDragOver);
+    el.addEventListener("drop", handleDrop);
+    el.addEventListener("mouseleave", handleMouseLeave);
     const boxShadowCleanup = this.onNextState(() => {
       const boxShadow = this.getContainerBoxShadow();
       el.style.boxShadow = boxShadow ?? "";
     });
     return () => {
-      window.removeEventListener("mouseup", cancelSelection);
+      window.removeEventListener("mouseup", onMouseUp);
       window.removeEventListener("mousedown", onMouseDown);
       window.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("paste", handlePaste);
+      el.removeEventListener("dragover", handleDragOver);
+      el.removeEventListener("drop", handleDrop);
+      el.removeEventListener("mouseleave", handleMouseLeave);
       boxShadowCleanup();
       selectionCleanup();
     };
