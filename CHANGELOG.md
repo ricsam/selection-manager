@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.4
+
+### Patch Changes
+
+- Make mutations to selections more consistent
+
 ## 0.0.3
 
 ### Patch Changes

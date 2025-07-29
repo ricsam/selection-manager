@@ -169,7 +169,7 @@ export class SelectionManager {
         end: { row, col },
         type: "drag",
       };
-      this.selections = [];
+      this.selections.length = 0;
     }
     this.onUpdate();
   }
@@ -309,7 +309,7 @@ export class SelectionManager {
       this.isSelecting.type = newType;
     } else {
       defaultIsSelecting();
-      this.selections = [];
+      this.selections.length = 0;
     }
     this.onUpdate();
   }
