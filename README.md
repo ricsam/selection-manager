@@ -352,9 +352,9 @@ function EditableSpreadsheet() {
       const exportGrid = Array(height).fill(null).map(() => Array(width).fill(""));
 
       // 🎯 Fill only the selected cells
-      selectionManager.forEachSelectedCell(({ source, target }) => {
-        const value = data.get(`${source.row},${source.col}`) || "";
-        exportGrid[target.row][target.col] = value;
+      selectionManager.forEachSelectedCell(({ absolute, relative }) => {
+        const value = data.get(`${absolute.row},${absolute.col}`) || "";
+        exportGrid[relative.row][relative.col] = value;
       });
 
       // 📋 Copy to clipboard as TSV (Excel-compatible!)
@@ -378,30 +378,12 @@ function EditableSpreadsheet() {
     });
   }, [data, selectionManager]);
 
-  // 🗑️ Handle delete operations
+  // 📝 Handle data updates (from cell editing, paste, etc.)
   useEffect(() => {
-    return selectionManager.listenToDelete(() => {
-      const selections = selectionManager.getNonOverlappingSelections();
+    return selectionManager.listenToUpdateData((updates) => {
       setData(prev => {
         const newData = new Map(prev);
-        selections.forEach(selection => {
-          for (let row = selection.start.row; row <= selection.end.row; row++) {
-            for (let col = selection.start.col; col <= selection.end.col; col++) {
-              newData.set(`${row},${col}`, "");
-            }
-          }
-        });
-        return newData;
-      });
-    });
-  }, [selectionManager]);
-
-  // 📥 Handle paste operations (supports CSV/TSV from clipboard!)
-  useEffect(() => {
-    return selectionManager.listenToInsertData((insertData) => {
-      setData(prev => {
-        const newData = new Map(prev);
-        insertData.forEach(({ rowIndex, colIndex, value }) => {
+        updates.forEach(({ rowIndex, colIndex, value }) => {
           newData.set(`${rowIndex},${colIndex}`, value);
         });
         return newData;
@@ -488,7 +470,7 @@ const EditableCell = React.memo(({ row, col, data, selectionManager }) => {
         onBlur={() => selectionManager.cancelEditing()}  // 🔥 Always cancel on blur
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
-            // 💾 Save using saveCellValue - triggers listenToInsertData!
+            // 💾 Save using saveCellValue - triggers listenToUpdateData!
             selectionManager.saveCellValue(
               { rowIndex: row, colIndex: col },
               e.target.value
@@ -759,8 +741,8 @@ const boundingRect = selectionManager.getSelectionsBoundingRect();
 const cleanSelections = selectionManager.getNonOverlappingSelections();
 
 // 🔄 Iterate through every selected cell
-selectionManager.forEachSelectedCell(({ source, target }) => {
-  console.log(`Cell ${source.row},${source.col} -> Grid pos ${target.row},${target.col}`);
+selectionManager.forEachSelectedCell(({ absolute, relative }) => {
+  console.log(`Cell ${absolute.row},${absolute.col} -> Grid pos ${relative.row},${relative.col}`);
 });
 
 // 🖱️ Is this cell being hovered?
@@ -769,11 +751,18 @@ const isHovering = selectionManager.isHoveringCell(row, col);
 // 🧹 Cancel any hovering state
 selectionManager.cancelHovering();
 
-// 💾 Save a cell value (triggers listenToInsertData listeners)
+// 💾 Save a cell value (triggers listenToUpdateData listeners)
 selectionManager.saveCellValue(
   { rowIndex: 2, colIndex: 3 }, 
   "New Value"
 );
+
+// 💾 Save multiple cell values at once
+selectionManager.saveCellValues([
+  { rowIndex: 0, colIndex: 0, value: "A1" },
+  { rowIndex: 0, colIndex: 1, value: "B1" },
+  { rowIndex: 1, colIndex: 0, value: "A2" }
+]);
 
 // 🔗 Group/merged cell operations
 const group = selectionManager.findGroupContainingCell({ row: 2, col: 3 });
@@ -798,7 +787,7 @@ const EditingCell = ({ row, col, selectionManager, initialValue }) => {
       }}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
-          // 💾 Save and exit - this triggers listenToInsertData listeners!
+          // 💾 Save and exit - this triggers listenToUpdateData listeners!
           selectionManager.saveCellValue(
             { rowIndex: row, colIndex: col },
             e.target.value
@@ -826,7 +815,7 @@ const EditingCell = ({ row, col, selectionManager, initialValue }) => {
 
 1. **`defaultValue` not `value`**: Use `defaultValue` for better performance and to avoid React warnings
 2. **Always handle `onBlur`**: Cancel editing when the user clicks away
-3. **Use `saveCellValue()`**: This method automatically triggers all `listenToInsertData` listeners
+3. **Use `saveCellValue()`**: This method automatically triggers all `listenToUpdateData` listeners
 4. **Handle Enter and Escape**: Standard spreadsheet behavior users expect
 
 ### 🔗 Merged Cell Groups (Advanced)
@@ -939,23 +928,31 @@ const tsv = selectionManager.selectionToTsv(dataMap);
 // Returns: "Hello\tWorld\n42\t🎉" (only selected cells)
 
 // 🎧 Listen for user actions
-const unsubscribeCopy = selectionManager.listenToCopy((isCut) => {
-  console.log(isCut ? "User cut data" : "User copied data");
+const unsubscribeCopy = selectionManager.listenToCopy(() => {
+  console.log("User copied/cut data");
 });
 
-const unsubscribeDelete = selectionManager.listenToDelete(() => {
-  console.log("User wants to delete selected cells");
-});
-
-const unsubscribePaste = selectionManager.listenToInsertData((data) => {
-  console.log("User pasted:", data);
+const unsubscribeData = selectionManager.listenToUpdateData((data) => {
+  console.log("Data updated:", data);
   // data: Array<{ rowIndex: number; colIndex: number; value: string }>
+  // This fires for: cell editing, paste operations, file drops, and manual saves
 });
+
+// 🗑️ Clear selected cells (triggers listenToUpdateData with empty values)
+selectionManager.clearSelectedCells();
+
+// 💾 Save single cell value (triggers listenToUpdateData)
+selectionManager.saveCellValue({ rowIndex: 2, colIndex: 3 }, "New Value");
+
+// 💾 Save multiple cell values (triggers listenToUpdateData)
+selectionManager.saveCellValues([
+  { rowIndex: 0, colIndex: 0, value: "A1" },
+  { rowIndex: 0, colIndex: 1, value: "B1" }
+]);
 
 // 🧹 Clean up when done
 unsubscribeCopy();
-unsubscribeDelete();
-unsubscribePaste();
+unsubscribeData();
 ```
 
 ## 🎪 Advanced Patterns

@@ -83,7 +83,7 @@ cellInSelection(cell: { row: number; col: number }, selection: SMSelection): boo
 getTopLeftCellInSelection(): { row: number; col: number } | undefined
 getSelectionsBoundingRect(): SMSelection | undefined
 getNonOverlappingSelections(): SMSelection[]
-forEachSelectedCell(callback: (cell: { source: { row: number; col: number }; target: { row: number; col: number } }) => void): void
+forEachSelectedCell(callback: (cell: { absolute: { row: number; col: number }; relative: { row: number; col: number } }) => void): void
 ```
 
 ### Group/Merged Cell Operations
@@ -111,21 +111,23 @@ type Border = "left" | "right" | "top" | "bottom"
 cellDoubleClick(row: number, col: number): void  // Start editing
 cancelEditing(): void
 isEditingCell(row: number, col: number): boolean
-saveCellValue(cell: { rowIndex: number; colIndex: number }, value: string): void  // Save and trigger listenToInsertData
+saveCellValue(cell: { rowIndex: number; colIndex: number }, value: string): void  // Save and trigger listenToUpdateData
 ```
 
 **Best Practices for Cell Editing:**
 1. Use `defaultValue` (not `value`) for input elements to avoid React warnings and improve performance
 2. Always add `onBlur` handler to cancel editing when user clicks away
-3. Use `saveCellValue()` on Enter key - this automatically triggers all `listenToInsertData` listeners
+3. Use `saveCellValue()` on Enter key - this automatically triggers all `listenToUpdateData` listeners
 4. Handle both Enter (save) and Escape (cancel) keys for standard spreadsheet behavior
 
 ### Data Operations
 ```typescript
 selectionToTsv(data: Map<string, unknown>): string  // Keys format: "row,col"
-listenToCopy(callback: (isCut: boolean) => void): () => void
-listenToDelete(callback: () => void): () => void
-listenToInsertData(callback: (data: Array<{ rowIndex: number; colIndex: number; value: string }>) => void): () => void
+listenToCopy(callback: () => void): () => void
+listenToUpdateData(callback: (data: Array<{ rowIndex: number; colIndex: number; value: string }>) => void): () => void
+saveCellValue(cell: { rowIndex: number; colIndex: number }, value: string): void
+saveCellValues(updates: Array<{ rowIndex: number; colIndex: number; value: string }>): void
+clearSelectedCells(): void
 ```
 
 ## Utility Functions
@@ -241,7 +243,7 @@ const EditableCell = ({ row, col, selectionManager, initialValue }) => {
         onBlur={() => selectionManager.cancelEditing()}  // Always cancel on blur
         onKeyDown={(e) => {
           if (e.key === 'Enter') {
-            // Save using saveCellValue - triggers listenToInsertData listeners!
+            // Save using saveCellValue - triggers listenToUpdateData listeners!
             selectionManager.saveCellValue(
               { rowIndex: row, colIndex: col },
               e.target.value
@@ -265,30 +267,29 @@ const EditableCell = ({ row, col, selectionManager, initialValue }) => {
 selectionManager.listenToCopy((isCut) => {
   const boundingRect = selectionManager.getSelectionsBoundingRect();
   const grid = Array(height).fill(null).map(() => Array(width).fill(""));
-  selectionManager.forEachSelectedCell(({ source, target }) => {
-    grid[target.row][target.col] = data.get(`${source.row},${source.col}`);
+  selectionManager.forEachSelectedCell(({ absolute, relative }) => {
+    grid[relative.row][relative.col] = data.get(`${absolute.row},${absolute.col}`);
   });
   const tsv = grid.map(row => row.join('\t')).join('\n');
   navigator.clipboard.writeText(tsv);
 });
 
-// Delete
-selectionManager.listenToDelete(() => {
-  selectionManager.getNonOverlappingSelections().forEach(selection => {
-    for (let row = selection.start.row; row <= selection.end.row; row++) {
-      for (let col = selection.start.col; col <= selection.end.col; col++) {
-        data.delete(`${row},${col}`);
-      }
-    }
-  });
-});
-
-// Paste or drag and drop
-selectionManager.listenToInsertData((insertData) => {
-  insertData.forEach(({ rowIndex, colIndex, value }) => {
+// Data updates (editing, paste, drop, delete operations)
+selectionManager.listenToUpdateData((updates) => {
+  updates.forEach(({ rowIndex, colIndex, value }) => {
     data.set(`${rowIndex},${colIndex}`, value);
   });
 });
+
+// Clear selected cells (this triggers listenToUpdateData with empty values)
+selectionManager.clearSelectedCells();
+
+// Save cell values manually (triggers listenToUpdateData)
+selectionManager.saveCellValue({ rowIndex: 2, colIndex: 3 }, "New Value");
+selectionManager.saveCellValues([
+  { rowIndex: 0, colIndex: 0, value: "A1" },
+  { rowIndex: 0, colIndex: 1, value: "B1" }
+]);
 
 // Custom CSV import using utility functions
 import { parseCSVContent, writeToClipboard } from 'selection-manager';
@@ -313,6 +314,12 @@ const exportSelection = () => {
 
 **⚠️ Performance Caveat**: Each cell/header MUST be its own component to get memoized callback refs. If you create callback refs in a loop or render function, they will be recreated on every render, causing constant cleanup/setup cycles and poor performance.
 
+**Data Handling Notes:**
+- `listenToUpdateData()` fires for all data changes: cell editing, paste operations, file drops, `saveCellValue()`, `saveCellValues()`, and `clearSelectedCells()`
+- `clearSelectedCells()` automatically clears selected cells by calling `saveCellValues()` with empty strings
+- Use `saveCellValue()` for single cell updates and `saveCellValues()` for batch updates
+- All data operations automatically handle infinite grids and complex selection scenarios
+
 ## Key Behaviors
 
 ### Selection Types
@@ -321,17 +328,18 @@ const exportSelection = () => {
 - **remove**: Ctrl/Cmd+click on selected area to remove from selection
 - **shift**: Shift+click to extend last selection
 
-### Copy/Paste/Delete Operations
-- **Copy (Ctrl/Cmd+C)**: Uses `getSelectionsBoundingRect()` and `getNonOverlappingSelections()` to create TSV grid
-- **Cut (Ctrl/Cmd+X)**: Same as copy but with cut flag set to true
-- **Delete (Delete/Backspace)**: Clears selected cells using `getNonOverlappingSelections()`
-- **Paste (Ctrl/Cmd+V)**: Automatically parses CSV/TSV from clipboard starting at top-left selection
-- **File Drop**: Supports dropping CSV/TSV files to paste data
+### Data Operations
+- **Copy (Ctrl/Cmd+C)**: Triggers `listenToCopy()` callback for user handling
+- **Cut (Ctrl/Cmd+X)**: Same as copy, followed by `clearSelectedCells()` 
+- **Delete (Delete/Backspace)**: Calls `clearSelectedCells()` which triggers `listenToUpdateData()` with empty values
+- **Paste (Ctrl/Cmd+V)**: Automatically parses CSV/TSV from clipboard and triggers `listenToUpdateData()`
+- **File Drop**: Supports dropping CSV/TSV files and triggers `listenToUpdateData()`
+- **Cell Editing**: Save operations trigger `listenToUpdateData()`
 
 ### Selection Analysis
 - **`getSelectionsBoundingRect()`**: Returns smallest rectangle containing all selections
 - **`getNonOverlappingSelections()`**: Decomposes overlapping selections into distinct regions
-- **`forEachSelectedCell(callback)`**: Iterates through all selected cells with source/target coordinates
+- **`forEachSelectedCell(callback)`**: Iterates through all selected cells with absolute/relative coordinates (relative is relative to the boundingRect)
 - Useful for data operations that need to handle complex multi-selection scenarios
 
 ### Infinite Grid Support

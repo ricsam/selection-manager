@@ -1251,7 +1251,7 @@ export class SelectionManager {
     ) {
       if (this.hasSelection()) {
         event.preventDefault();
-        this.listenToCopyListeners.forEach((listener) => listener(false)); // false for copy
+        this.listenToCopyListeners.forEach((listener) => listener());
       }
       return;
     }
@@ -1262,7 +1262,8 @@ export class SelectionManager {
     ) {
       if (this.hasSelection()) {
         event.preventDefault();
-        this.listenToCopyListeners.forEach((listener) => listener(true)); // true for cut
+        this.listenToCopyListeners.forEach((listener) => listener());
+        this.clearSelectedCells();
       }
       return;
     }
@@ -1270,7 +1271,7 @@ export class SelectionManager {
     if (event.key === "Delete" || event.key === "Backspace") {
       if (this.hasSelection()) {
         event.preventDefault();
-        this.listenToDeleteListeners.forEach((listener) => listener());
+        this.clearSelectedCells();
       }
       return;
     }
@@ -1491,10 +1492,32 @@ export class SelectionManager {
     return tsvRows.join("\n");
   }
 
+  clearSelectedCells() {
+    const updates: { rowIndex: number; colIndex: number; value: string }[] = [];
+    this.getNonOverlappingSelections().forEach((selection) => {
+      for (let row = selection.start.row; row <= selection.end.row; row++) {
+        for (let col = selection.start.col; col <= selection.end.col; col++) {
+          updates.push({
+            rowIndex: row,
+            colIndex: col,
+            value: "",
+          });
+        }
+      }
+    });
+    this.saveCellValues(updates);
+  }
+
   forEachSelectedCell(
     callback: (cell: {
-      source: { row: number; col: number };
-      target: { row: number; col: number };
+      /**
+       * absolute
+       */
+      absolute: { row: number; col: number };
+      /**
+       * relative to the bounding rect
+       */
+      relative: { row: number; col: number };
     }) => void,
   ) {
     const selections = this.getNonOverlappingSelections();
@@ -1519,8 +1542,8 @@ export class SelectionManager {
       for (let row = selection.start.row; row <= selection.end.row; row++) {
         for (let col = selection.start.col; col <= selection.end.col; col++) {
           callback({
-            source: { row, col },
-            target: {
+            absolute: { row, col },
+            relative: {
               row: row - boundingRect.start.row,
               col: col - boundingRect.start.col,
             },
@@ -1530,8 +1553,8 @@ export class SelectionManager {
     });
   }
 
-  private listenToCopyListeners: ((cut: boolean) => void)[] = [];
-  listenToCopy(callback: (cut: boolean) => void) {
+  private listenToCopyListeners: (() => void)[] = [];
+  listenToCopy(callback: () => void) {
     this.listenToCopyListeners.push(callback);
     return () => {
       this.listenToCopyListeners = this.listenToCopyListeners.filter(
@@ -1540,28 +1563,18 @@ export class SelectionManager {
     };
   }
 
-  private listenToDeleteListeners: (() => void)[] = [];
-  listenToDelete(callback: () => void) {
-    this.listenToDeleteListeners.push(callback);
-    return () => {
-      this.listenToCopyListeners = this.listenToCopyListeners.filter(
-        (l) => l !== callback,
-      );
-    };
-  }
-
-  private listenToInsertDataListeners: ((
+  private listenToUpdateDataListeners: ((
     updates: { rowIndex: number; colIndex: number; value: string }[],
   ) => void)[] = [];
-  listenToInsertData(
+  listenToUpdateData(
     callback: (
       data: { rowIndex: number; colIndex: number; value: string }[],
     ) => void,
   ) {
-    this.listenToInsertDataListeners.push(callback);
+    this.listenToUpdateDataListeners.push(callback);
     return () => {
-      this.listenToInsertDataListeners =
-        this.listenToInsertDataListeners.filter((l) => l !== callback);
+      this.listenToUpdateDataListeners =
+        this.listenToUpdateDataListeners.filter((l) => l !== callback);
     };
   }
 
@@ -1569,7 +1582,7 @@ export class SelectionManager {
     cell: { rowIndex: number; colIndex: number },
     value: string,
   ) {
-    this.listenToInsertDataListeners.forEach((listener) => {
+    this.listenToUpdateDataListeners.forEach((listener) => {
       listener([{ rowIndex: cell.rowIndex, colIndex: cell.colIndex, value }]);
       this.onUpdate();
     });
@@ -1578,7 +1591,7 @@ export class SelectionManager {
   public saveCellValues(
     updates: { rowIndex: number; colIndex: number; value: string }[],
   ) {
-    this.listenToInsertDataListeners.forEach((listener) => {
+    this.listenToUpdateDataListeners.forEach((listener) => {
       listener(updates);
     });
   }
@@ -1835,7 +1848,7 @@ export class SelectionManager {
       });
     });
 
-    this.listenToInsertDataListeners.forEach((listener) => listener(updates));
+    this.listenToUpdateDataListeners.forEach((listener) => listener(updates));
   }
 
   handleDrop(ev: DragEvent) {

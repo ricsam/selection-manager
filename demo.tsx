@@ -31,7 +31,7 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
     const [values, setValues] = useState<Record<string, string>>({});
 
     React.useEffect(() => {
-      return selectionManager.listenToInsertData((data) => {
+      return selectionManager.listenToUpdateData((data) => {
         data.forEach(({ rowIndex, colIndex, value }) => {
           setValues((prev) => ({
             ...prev,
@@ -42,26 +42,7 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
     }, [selectionManager]);
 
     React.useEffect(() => {
-      return selectionManager.listenToDelete(() => {
-        const selections = selectionManager.getNonOverlappingSelections();
-        const updates = new Map<string, string>();
-        selections.forEach((selection) => {
-          const { start, end } = selection;
-          for (let row = start.row; row <= end.row; row++) {
-            for (let col = start.col; col <= end.col; col++) {
-              updates.set(`${row},${col}`, "");
-            }
-          }
-        });
-        setValues((prev) => ({
-          ...prev,
-          ...Object.fromEntries(updates),
-        }));
-      });
-    }, [selectionManager]);
-
-    React.useEffect(() => {
-      return selectionManager.listenToCopy((cut) => {
+      return selectionManager.listenToCopy(() => {
         const boundingRect = selectionManager.getSelectionsBoundingRect();
         if (!boundingRect) return;
 
@@ -73,23 +54,15 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
           .map(() => Array(gridWidth).fill(""));
 
         // Fill grid with selected data using forEachSelectedCell helper
-        selectionManager.forEachSelectedCell(({ source, target }) => {
+        selectionManager.forEachSelectedCell(({ absolute, relative }) => {
           const value =
-            values[`${source.row},${source.col}`] ??
-            `${source.row},${source.col}`;
-          grid[target.row]![target.col] = value;
+            values[`${absolute.row},${absolute.col}`] ??
+            `${absolute.row},${absolute.col}`;
+          grid[relative.row]![relative.col] = value;
         });
 
         const tsvString = grid.map((row) => row.join("\t")).join("\n");
         navigator.clipboard.writeText(tsvString);
-        if (cut) {
-          selectionManager.forEachSelectedCell(({ source }) => {
-            setValues((prev) => ({
-              ...prev,
-              [`${source.row},${source.col}`]: "",
-            }));
-          });
-        }
       });
     }, [selectionManager, values]);
 
@@ -423,9 +396,7 @@ function Test4() {
   const [containerElement, setContainerElement] = useState<HTMLElement | null>(
     null,
   );
-  const [reportedSelections, setReportedSelections] = useState<SMArea[]>(
-    [],
-  );
+  const [reportedSelections, setReportedSelections] = useState<SMArea[]>([]);
   const selectionManager = useInitializeSelectionManager({
     getNumRows: () => 8,
     getNumCols: () => 8,
@@ -693,7 +664,9 @@ function Test6() {
     const content = [];
 
     // First row: corner + column headers
-    content.push(<CornerCell key="corner" selectionManager={selectionManager} />);
+    content.push(
+      <CornerCell key="corner" selectionManager={selectionManager} />,
+    );
     for (let col = 0; col < 8; col++) {
       content.push(
         <HeaderComponent

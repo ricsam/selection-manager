@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.5
+
+### Patch Changes
+
+- consolidate data handling methods
+
 ## 0.0.4
 
 ### Patch Changes
