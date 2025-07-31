@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.6
+
+### Patch Changes
+
+- add getCellsWithData
+
 ## 0.0.5
 
 ### Patch Changes

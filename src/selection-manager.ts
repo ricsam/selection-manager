@@ -1492,18 +1492,38 @@ export class SelectionManager {
     return tsvRows.join("\n");
   }
 
+  /**
+   * @param area - The area to get the cells from.
+   *
+   * can be overridden by the user to return a different list of cells based on their data,
+   * useful when the selectable area is infinite
+   *
+   * @returns A list of cells in the area.
+   */
+  public getCellsWithData(area: SMArea): { rowIndex: number; colIndex: number; }[] {
+    if (area.end.row === Infinity || area.end.col === Infinity) {
+      throw new Error("Cannot iterate over infinite selections");
+    }
+    const cells: { rowIndex: number; colIndex: number; }[] = [];
+    for (let row = area.start.row; row <= area.end.row; row++) {
+      for (let col = area.start.col; col <= area.end.col; col++) {
+        cells.push({ rowIndex: row, colIndex: col });
+      }
+    }
+    return cells;
+  }
+
   clearSelectedCells() {
     const updates: { rowIndex: number; colIndex: number; value: string }[] = [];
     this.getNonOverlappingSelections().forEach((selection) => {
-      for (let row = selection.start.row; row <= selection.end.row; row++) {
-        for (let col = selection.start.col; col <= selection.end.col; col++) {
-          updates.push({
-            rowIndex: row,
-            colIndex: col,
-            value: "",
-          });
-        }
-      }
+      const cells = this.getCellsWithData(selection);
+      cells.forEach((cell) => {
+        updates.push({
+          rowIndex: cell.rowIndex,
+          colIndex: cell.colIndex,
+          value: "",
+        });
+      });
     });
     this.saveCellValues(updates);
   }
