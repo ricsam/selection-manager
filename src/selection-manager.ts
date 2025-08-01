@@ -2,6 +2,10 @@ import { parseCSVContent } from "./utils";
 
 export type SMArea = {
   start: { row: number; col: number };
+  /**
+   * The last row and column of the area.
+   * Inclusive. Support row: Infinity and col: Infinity.
+   */
   end: { row: number; col: number };
 };
 
