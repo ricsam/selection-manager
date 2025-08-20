@@ -1668,7 +1668,6 @@ export class SelectionManager {
 
       if (shouldUpdate) {
         event.preventDefault();
-        console.log("shouldUpdate", shouldUpdate);
         this.onUpdate();
       }
       return;
@@ -1988,7 +1987,6 @@ export class SelectionManager {
         !!fillHandleBaseSelection &&
         (htmlEl.hasAttribute("data-fill-handle") ||
           htmlEl.querySelector("[data-fill-handle]") !== null);
-      console.log("isFillHandle", isFillHandle);
       this.cellMouseDown(cell.row, cell.col, {
         shiftKey: e.shiftKey,
         ctrlKey: e.ctrlKey,

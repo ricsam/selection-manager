@@ -13,6 +13,7 @@ Transform any grid into an Excel-like powerhouse with intuitive multi-selection,
 - 🎨 **Visual feedback** - Beautiful borders and shadows that make selections pop
 - 🖱️ **Hover detection** - Know exactly which cells and headers users are hovering over
 - 🔗 **Merged cell support** - Handle grouped/merged cells like a real spreadsheet
+- 🎯 **Fill handle** - Excel-style drag-to-fill functionality for extending data patterns
 - 📊 **Data export** - Copy/paste TSV like you're in Excel (because why not?)
 - ♾️ **Infinite grids** - Go crazy with millions of rows and columns
 - 🔄 **Real-time updates** - Everything stays in sync, always
@@ -768,6 +769,10 @@ selectionManager.saveCellValues([
 const group = selectionManager.findGroupContainingCell({ row: 2, col: 3 });
 const isHoveringGroup = selectionManager.isHoveringGroup(group);
 const groupShadow = selectionManager.getBoxShadow({ color: '#4CAF50' });
+
+// 🎯 Fill handle operations
+const canShowFillHandle = selectionManager.canCellHaveFillHandle({ row: 2, col: 3 });
+const fillBaseSelection = selectionManager.getFillHandleBaseSelection();
 ```
 
 ### ✏️ Cell Editing Best Practices
@@ -817,6 +822,89 @@ const EditingCell = ({ row, col, selectionManager, initialValue }) => {
 2. **Always handle `onBlur`**: Cancel editing when the user clicks away
 3. **Use `saveCellValue()`**: This method automatically triggers all `listenToUpdateData` listeners
 4. **Handle Enter and Escape**: Standard spreadsheet behavior users expect
+
+### 🎯 Fill Handle - Excel-Style Data Extension
+
+The fill handle lets users drag from the bottom-right corner of a selection to extend data patterns, just like in Excel:
+
+```tsx
+function CellWithFillHandle({ row, col, selectionManager, data }) {
+  const canHaveFillHandle = useSelectionManager(
+    selectionManager,
+    () => selectionManager.canCellHaveFillHandle({ row, col })
+  );
+
+  return (
+    <div
+      className="cell"
+      onMouseDown={(e) => {
+        const isFillHandle = 
+          e.target instanceof HTMLElement &&
+          (e.target.hasAttribute("data-fill-handle") ||
+           e.target.querySelector("[data-fill-handle]") !== null);
+
+        selectionManager.cellMouseDown(row, col, {
+          shiftKey: e.shiftKey,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+          isFillHandle  // 🔑 Key parameter for fill handle detection
+        });
+      }}
+      // ... other props
+    >
+      {/* Your cell content */}
+      Cell content here
+      
+      {/* 🎯 Fill handle - only shows on bottom-right cell of selection */}
+      {canHaveFillHandle && (
+        <div
+          data-fill-handle={true}  // 🔑 Required attribute
+          style={{
+            position: "absolute",
+            bottom: 0,
+            right: 0,
+            width: 8,
+            height: 8,
+            backgroundColor: "blue",
+            cursor: "crosshair",  // Excel-style cursor
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// 🎧 Listen for fill operations
+React.useEffect(() => {
+  return selectionManager.listenToFill((baseSelection, fillArea) => {
+    console.log("Fill operation:", { from: baseSelection, to: fillArea });
+    
+    // Implement your fill logic here
+    // Example: extend patterns, copy data, generate sequences, etc.
+    const updates = generateFillData(baseSelection, fillArea);
+    selectionManager.saveCellValues(updates);
+  });
+}, [selectionManager]);
+```
+
+**🎯 Key Fill Handle Features:**
+
+1. **Automatic detection**: Use `canCellHaveFillHandle()` to check if a cell should show the handle
+2. **Visual feedback**: Fill operations show with red borders during drag
+3. **Smart direction**: Automatically detects row-wise vs column-wise fill based on drag direction
+4. **Event driven**: Use `listenToFill()` to implement your own data extension logic
+5. **Excel-like UX**: Familiar crosshair cursor and bottom-right corner positioning
+
+**🎨 Fill Handle Styling:**
+
+```tsx
+// The fill handle gets special styling during drag operations
+const cellBoxShadow = selectionManager.getCellBoxShadow({ row, col });
+// During fill operations, this returns red borders instead of blue
+
+// You can also detect fill mode programmatically
+const isFillMode = selectionManager.isSelecting.type === "fill";
+```
 
 ### 🔗 Merged Cell Groups (Advanced)
 
@@ -938,6 +1026,16 @@ const unsubscribeData = selectionManager.listenToUpdateData((data) => {
   // This fires for: cell editing, paste operations, file drops, and manual saves
 });
 
+const unsubscribeFill = selectionManager.listenToFill((baseSelection, fillArea) => {
+  console.log("Fill operation:", { from: baseSelection, to: fillArea });
+  // baseSelection: The original selected area being extended from
+  // fillArea: The new area being filled (includes direction and extent)
+  
+  // Implement your fill logic: copy data, extend patterns, generate sequences, etc.
+  const fillUpdates = generateDataForFillArea(baseSelection, fillArea);
+  selectionManager.saveCellValues(fillUpdates);
+});
+
 // 🗑️ Clear selected cells (triggers listenToUpdateData with empty values)
 selectionManager.clearSelectedCells();
 
@@ -953,6 +1051,7 @@ selectionManager.saveCellValues([
 // 🧹 Clean up when done
 unsubscribeCopy();
 unsubscribeData();
+unsubscribeFill();
 ```
 
 ## 🎪 Advanced Patterns

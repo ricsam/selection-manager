@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.8
+
+### Patch Changes
+
+- remove console.logs
+
 ## 0.0.7
 
 ### Patch Changes
