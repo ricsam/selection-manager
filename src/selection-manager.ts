@@ -1,12 +1,19 @@
 import { parseCSVContent } from "./utils";
 
+export type RealNumber = { type: "number"; value: number };
+export type InfinityNumber = { type: "infinity" };
+export type MaybeInfNumber = RealNumber | InfinityNumber;
+
 export type SMArea = {
   start: { row: number; col: number };
   /**
    * The last row and column of the area.
    * Inclusive. Support row: Infinity and col: Infinity.
    */
-  end: { row: number; col: number };
+  end: {
+    row: MaybeInfNumber;
+    col: MaybeInfNumber;
+  };
 };
 
 type KeyboardEvent = {
@@ -61,7 +68,18 @@ type IsHovering =
       index: number;
       headerType: "row" | "col";
     };
-
+const sort = (a: number | "INF", b: number | "INF"): number => {
+  if (a === b) {
+    return 0;
+  }
+  if (a === "INF") {
+    return 1;
+  }
+  if (b === "INF") {
+    return -1;
+  }
+  return a - b;
+};
 export class SelectionManager {
   hasFocus = false;
   selections: SMArea[] = [];
@@ -73,8 +91,8 @@ export class SelectionManager {
   key = String(Math.random());
 
   constructor(
-    public getNumRows: () => number,
-    public getNumCols: () => number,
+    public getNumRows: () => MaybeInfNumber,
+    public getNumCols: () => MaybeInfNumber,
     public getGroups: () => SMArea[],
   ) {}
 
@@ -170,7 +188,10 @@ export class SelectionManager {
       if (end) {
         this.isSelecting = {
           start: { row, col },
-          end,
+          end: {
+            row: end.row,
+            col: end.col,
+          },
           type: "fill",
         };
         this.onUpdate();
@@ -180,20 +201,29 @@ export class SelectionManager {
     if (keys.shiftKey && lastSelection) {
       this.selections.splice(this.selections.length - 1, 1);
       this.isSelecting = { ...lastSelection, type: "shift" };
-      this.isSelecting.end = { row, col };
+      this.isSelecting.end = {
+        row: { type: "number", value: row },
+        col: { type: "number", value: col },
+      };
     } else if (cmdKey) {
       const type: "add" | "remove" = this.isSelected({ row, col })
         ? "remove"
         : "add";
       this.isSelecting = {
         start: { row, col },
-        end: { row, col },
+        end: {
+          row: { type: "number", value: row },
+          col: { type: "number", value: col },
+        },
         type,
       };
     } else {
       this.isSelecting = {
         start: { row, col },
-        end: { row, col },
+        end: {
+          row: { type: "number", value: row },
+          col: { type: "number", value: col },
+        },
         type: "drag",
       };
       this.selections.length = 0;
@@ -209,26 +239,44 @@ export class SelectionManager {
     if (this.isSelecting.type === "remove") {
       return false;
     }
-    const startRow = Math.min(
+    const startRow = this.min(
       this.isSelecting.start.row,
       this.isSelecting.end.row,
     );
-    const endRow = Math.max(
+    const endRow = this.max(
       this.isSelecting.start.row,
       this.isSelecting.end.row,
     );
-    const startCol = Math.min(
+    const startCol = this.min(
       this.isSelecting.start.col,
       this.isSelecting.end.col,
     );
-    const endCol = Math.max(
+    const endCol = this.max(
       this.isSelecting.start.col,
       this.isSelecting.end.col,
     );
 
-    const isInDragArea =
-      row >= startRow && row <= endRow && col >= startCol && col <= endCol;
-    return isInDragArea;
+    if (endRow.type === "infinity" && endCol.type === "infinity") {
+      return row >= startRow && col >= startCol;
+    }
+
+    if (endRow.type === "number" && endCol.type === "number") {
+      return (
+        row >= startRow &&
+        row <= endRow.value &&
+        col >= startCol &&
+        col <= endCol.value
+      );
+    }
+
+    if (endRow.type === "infinity" && endCol.type === "number") {
+      return row >= startRow && col >= startCol && col <= endCol.value;
+    }
+    if (endCol.type === "infinity" && endRow.type === "number") {
+      return row >= startRow && row <= endRow.value && col >= startCol;
+    }
+
+    throw new Error("Invalid selection");
   }
 
   findGroupContainingCell(cell: { row: number; col: number }) {
@@ -238,24 +286,25 @@ export class SelectionManager {
   getFillHandleSelectionEnd(
     start: { row: number; col: number },
     currentCell: { row: number; col: number },
-  ) {
+  ): { row: MaybeInfNumber; col: MaybeInfNumber } | undefined {
     const baseSelection = this.getFillHandleBaseSelection();
     if (!baseSelection) {
       return;
     }
     const rowDiff = Math.abs(currentCell.row - start.row);
     const colDiff = Math.abs(currentCell.col - start.col);
-    const minCol = Math.min(baseSelection.start.col, baseSelection.end.col);
-    const minRow = Math.min(baseSelection.start.row, baseSelection.end.row);
+    const minCol = this.min(baseSelection.start.col, baseSelection.end.col);
+    const minRow = this.min(baseSelection.start.row, baseSelection.end.row);
+
     if (colDiff >= rowDiff) {
       return {
-        row: minRow,
-        col: currentCell.col,
+        row: { type: "number", value: minRow },
+        col: { type: "number", value: currentCell.col },
       };
     } else {
       return {
-        row: currentCell.row,
-        col: minCol,
+        row: { type: "number", value: currentCell.row },
+        col: { type: "number", value: minCol },
       };
     }
   }
@@ -272,12 +321,21 @@ export class SelectionManager {
           },
         );
         if (fillHandleEnd) {
-          this.isSelecting.end = fillHandleEnd;
+          this.isSelecting.end = {
+            row: fillHandleEnd.row,
+            col: fillHandleEnd.col,
+          };
         } else {
-          this.isSelecting.end = { row, col };
+          this.isSelecting.end = {
+            row: { type: "number", value: row },
+            col: { type: "number", value: col },
+          };
         }
       } else {
-        this.isSelecting.end = { row, col };
+        this.isSelecting.end = {
+          row: { type: "number", value: row },
+          col: { type: "number", value: col },
+        };
       }
     }
     const group = this.findGroupContainingCell({ row, col });
@@ -333,13 +391,21 @@ export class SelectionManager {
     }
 
     const bottomRight = this.bottomRightOfSelection(baseSelection);
-    return bottomRight.row === cell.row && bottomRight.col === cell.col;
+    if (
+      bottomRight.row.type === "infinity" ||
+      bottomRight.col.type === "infinity"
+    ) {
+      return false;
+    }
+    return (
+      bottomRight.row.value === cell.row && bottomRight.col.value === cell.col
+    );
   }
 
   bottomRightOfSelection(selection: SMArea) {
     return {
-      row: Math.max(selection.start.row, selection.end.row),
-      col: Math.max(selection.start.col, selection.end.col),
+      row: this.max(selection.start.row, selection.end.row),
+      col: this.max(selection.start.col, selection.end.col),
     };
   }
 
@@ -351,10 +417,8 @@ export class SelectionManager {
     this.willMaybeUpdate();
     const lastSelection = this.selections[this.selections.length - 1];
 
-    const actualEndRow =
-      this.getNumRows() === Infinity ? Infinity : this.getNumRows() - 1;
-    const actualEndCol =
-      this.getNumCols() === Infinity ? Infinity : this.getNumCols() - 1;
+    const actualEndRow = this.getActualEndRow();
+    const actualEndCol = this.getActualEndCol();
 
     const cmdKey = keys.metaKey || keys.ctrlKey;
 
@@ -362,13 +426,13 @@ export class SelectionManager {
       if (type === "row") {
         this.isSelecting = {
           start: { row: index, col: 0 },
-          end: { row: index, col: actualEndCol },
+          end: { row: { type: "number", value: index }, col: actualEndCol },
           type: "drag",
         };
       } else {
         this.isSelecting = {
           start: { row: 0, col: index },
-          end: { row: actualEndRow, col: index },
+          end: { row: actualEndRow, col: { type: "number", value: index } },
           type: "drag",
         };
       }
@@ -377,9 +441,15 @@ export class SelectionManager {
       this.selections.splice(this.selections.length - 1, 1);
       this.isSelecting = { ...lastSelection, type: "shift" };
       if (type === "row") {
-        this.isSelecting.end = { row: index, col: actualEndCol };
+        this.isSelecting.end = {
+          row: { type: "number", value: index },
+          col: actualEndCol,
+        };
       } else {
-        this.isSelecting.end = { row: actualEndRow, col: index };
+        this.isSelecting.end = {
+          row: actualEndRow,
+          col: { type: "number", value: index },
+        };
       }
     } else if (cmdKey) {
       let newType: "add" | "remove" = "add";
@@ -404,15 +474,19 @@ export class SelectionManager {
 
   headerMouseEnter(index: number, type: "row" | "col") {
     this.willMaybeUpdate();
-    const actualEndCol =
-      this.getNumCols() === Infinity ? Infinity : this.getNumCols() - 1;
-    const actualEndRow =
-      this.getNumRows() === Infinity ? Infinity : this.getNumRows() - 1;
+    const actualEndCol = this.getActualEndCol();
+    const actualEndRow = this.getActualEndRow();
     if (this.isSelecting.type !== "none") {
       if (type === "row") {
-        this.isSelecting.end = { row: index, col: actualEndCol };
+        this.isSelecting.end = {
+          row: { type: "number", value: index },
+          col: actualEndCol,
+        };
       } else {
-        this.isSelecting.end = { row: actualEndRow, col: index };
+        this.isSelecting.end = {
+          row: actualEndRow,
+          col: { type: "number", value: index },
+        };
       }
     }
     this.isHovering = { type: "header", index, headerType: type };
@@ -425,13 +499,31 @@ export class SelectionManager {
     this.onUpdate();
   }
 
-  getActualEndRow() {
+  getActualEndRow(): MaybeInfNumber {
     const numRows = this.getNumRows();
-    return numRows === Infinity ? Infinity : numRows - 1;
+    return numRows.type === "infinity"
+      ? { type: "infinity" }
+      : { type: "number", value: numRows.value - 1 };
   }
-  getActualEndCol() {
+  getActualEndCol(): MaybeInfNumber {
     const numCols = this.getNumCols();
-    return numCols === Infinity ? Infinity : numCols - 1;
+    return numCols.type === "infinity"
+      ? { type: "infinity" }
+      : { type: "number", value: numCols.value - 1 };
+  }
+
+  /**
+   * Normalizes a selection end bound to actual table bounds if it's infinite
+   */
+  private normalizeEndBound(
+    endBound: MaybeInfNumber,
+    tableSize: MaybeInfNumber,
+  ): MaybeInfNumber {
+    return endBound.type === "infinity"
+      ? tableSize.type === "infinity"
+        ? { type: "infinity" }
+        : { type: "number", value: tableSize.value - 1 }
+      : endBound;
   }
 
   normalizeSelection(selection: SMArea) {
@@ -442,15 +534,85 @@ export class SelectionManager {
       },
       end: {
         row:
-          selection.end.row === Infinity
+          selection.end.row.type === "infinity"
             ? this.getActualEndRow()
             : selection.end.row,
         col:
-          selection.end.col === Infinity
+          selection.end.col.type === "infinity"
             ? this.getActualEndCol()
             : selection.end.col,
       },
     };
+  }
+
+  min(a: number, b: MaybeInfNumber): number {
+    return b.type === "infinity" ? a : Math.min(a, b.value);
+  }
+  max(a: number, b: MaybeInfNumber): MaybeInfNumber {
+    return b.type === "infinity"
+      ? { type: "infinity" }
+      : { type: "number", value: Math.max(a, b.value) };
+  }
+
+  minMaybeInf(a: MaybeInfNumber, b: MaybeInfNumber): MaybeInfNumber {
+    if (a.type === "infinity" && b.type === "infinity") {
+      return a;
+    }
+    if (b.type === "infinity") {
+      return a;
+    }
+    if (a.type === "infinity") {
+      return b;
+    }
+    return { type: "number", value: Math.min(a.value, b.value) };
+  }
+
+  maxMaybeInf(a: MaybeInfNumber, b: MaybeInfNumber): MaybeInfNumber {
+    return a.type === "infinity"
+      ? a
+      : b.type === "infinity"
+        ? b
+        : { type: "number", value: Math.max(a.value, b.value) };
+  }
+
+  /**
+   * a === b
+   */
+  equals(a: MaybeInfNumber, b: MaybeInfNumber): boolean {
+    if (a.type !== b.type) {
+      return false;
+    }
+    if (a.type === "number" && b.type === "number") {
+      return a.value === b.value;
+    }
+    return true;
+  }
+
+  /**
+   * a < b
+   */
+  lt(a: MaybeInfNumber, b: MaybeInfNumber): boolean {
+    if (a.type === "infinity") {
+      return false;
+    }
+    if (b.type === "infinity") {
+      return true;
+    }
+    return a.value < b.value;
+  }
+
+  lte(a: MaybeInfNumber, b: MaybeInfNumber): boolean {
+    return this.lt(a, b) || this.equals(a, b);
+  }
+  gte(a: MaybeInfNumber, b: MaybeInfNumber): boolean {
+    return this.gt(a, b) || this.equals(a, b);
+  }
+
+  /**
+   * a > b
+   */
+  gt(a: MaybeInfNumber, b: MaybeInfNumber): boolean {
+    return !this.equals(a, b) && !this.lt(a, b);
   }
 
   cellInSelection(
@@ -458,33 +620,23 @@ export class SelectionManager {
     selection: SMArea,
   ): boolean {
     const { start, end } = selection;
-    const startRow = Math.min(start.row, end.row);
-    const startCol = Math.min(start.col, end.col);
-    const endRow = Math.max(start.row, end.row);
-    const endCol = Math.max(start.col, end.col);
+    const startRow = this.min(start.row, end.row);
+    const startCol = this.min(start.col, end.col);
+    const endRow = this.max(start.row, end.row);
+    const endCol = this.max(start.col, end.col);
 
     const numRows = this.getNumRows();
     const numCols = this.getNumCols();
 
-    // Handle infinite selections by using actual table bounds
-    const actualEndRow =
-      endRow === Infinity
-        ? numRows === Infinity
-          ? Infinity
-          : numRows - 1
-        : endRow;
-    const actualEndCol =
-      endCol === Infinity
-        ? numCols === Infinity
-          ? Infinity
-          : numCols - 1
-        : endCol;
+    // Handle infinite selections by normalizing to actual table bounds
+    const actualEndRow = this.normalizeEndBound(endRow, numRows);
+    const actualEndCol = this.normalizeEndBound(endCol, numCols);
 
     return (
       cell.row >= startRow &&
-      (actualEndRow === Infinity || cell.row <= actualEndRow) &&
+      (actualEndRow.type === "infinity" || cell.row <= actualEndRow.value) &&
       cell.col >= startCol &&
-      (actualEndCol === Infinity || cell.col <= actualEndCol)
+      (actualEndCol.type === "infinity" || cell.col <= actualEndCol.value)
     );
   }
 
@@ -510,34 +662,34 @@ export class SelectionManager {
   }
 
   private selectionsOverlap(a: SMArea, b: SMArea): boolean {
-    const aMinRow = Math.min(a.start.row, a.end.row);
-    const aMaxRow = Math.max(a.start.row, a.end.row);
-    const aMinCol = Math.min(a.start.col, a.end.col);
-    const aMaxCol = Math.max(a.start.col, a.end.col);
+    const aMinRow = this.min(a.start.row, a.end.row);
+    const aMaxRow = this.max(a.start.row, a.end.row);
+    const aMinCol = this.min(a.start.col, a.end.col);
+    const aMaxCol = this.max(a.start.col, a.end.col);
 
-    const bMinRow = Math.min(b.start.row, b.end.row);
-    const bMaxRow = Math.max(b.start.row, b.end.row);
-    const bMinCol = Math.min(b.start.col, b.end.col);
-    const bMaxCol = Math.max(b.start.col, b.end.col);
+    const bMinRow = this.min(b.start.row, b.end.row);
+    const bMaxRow = this.max(b.start.row, b.end.row);
+    const bMinCol = this.min(b.start.col, b.end.col);
+    const bMaxCol = this.max(b.start.col, b.end.col);
 
     return !(
-      aMaxRow < bMinRow ||
-      aMinRow > bMaxRow ||
-      aMaxCol < bMinCol ||
-      aMinCol > bMaxCol
+      this.lt(aMaxRow, { type: "number", value: bMinRow }) ||
+      this.gt({ type: "number", value: aMinRow }, bMaxRow) ||
+      this.lt(aMaxCol, { type: "number", value: bMinCol }) ||
+      this.gt({ type: "number", value: aMinCol }, bMaxCol)
     );
   }
 
   private subtractSelection(original: SMArea, toRemove: SMArea): SMArea[] {
-    const origMinRow = Math.min(original.start.row, original.end.row);
-    const origMaxRow = Math.max(original.start.row, original.end.row);
-    const origMinCol = Math.min(original.start.col, original.end.col);
-    const origMaxCol = Math.max(original.start.col, original.end.col);
+    const origMinRow = this.min(original.start.row, original.end.row);
+    const origMaxRow = this.max(original.start.row, original.end.row);
+    const origMinCol = this.min(original.start.col, original.end.col);
+    const origMaxCol = this.max(original.start.col, original.end.col);
 
-    const removeMinRow = Math.min(toRemove.start.row, toRemove.end.row);
-    const removeMaxRow = Math.max(toRemove.start.row, toRemove.end.row);
-    const removeMinCol = Math.min(toRemove.start.col, toRemove.end.col);
-    const removeMaxCol = Math.max(toRemove.start.col, toRemove.end.col);
+    const removeMinRow = this.min(toRemove.start.row, toRemove.end.row);
+    const removeMaxRow = this.max(toRemove.start.row, toRemove.end.row);
+    const removeMinCol = this.min(toRemove.start.col, toRemove.end.col);
+    const removeMaxCol = this.max(toRemove.start.col, toRemove.end.col);
 
     const remaining: SMArea[] = [];
 
@@ -545,14 +697,26 @@ export class SelectionManager {
     if (origMinRow < removeMinRow) {
       remaining.push({
         start: { row: origMinRow, col: origMinCol },
-        end: { row: Math.min(removeMinRow - 1, origMaxRow), col: origMaxCol },
+        end: {
+          row: {
+            type: "number",
+            value: this.min(removeMinRow - 1, origMaxRow),
+          },
+          col: origMaxCol,
+        },
       });
     }
 
     // Bottom rectangle (below the removed area)
-    if (origMaxRow > removeMaxRow) {
+    if (this.gt(origMaxRow, removeMaxRow)) {
+      if (removeMaxRow.type === "infinity") {
+        throw new Error("Should not be possible to remove an infinite area");
+      }
       remaining.push({
-        start: { row: Math.max(removeMaxRow + 1, origMinRow), col: origMinCol },
+        start: {
+          row: Math.max(origMinRow, removeMaxRow.value + 1),
+          col: origMinCol,
+        },
         end: { row: origMaxRow, col: origMaxCol },
       });
     }
@@ -560,22 +724,34 @@ export class SelectionManager {
     // Left rectangle (to the left of the removed area, within the vertical bounds of overlap)
     if (origMinCol < removeMinCol) {
       const topRow = Math.max(origMinRow, removeMinRow);
-      const bottomRow = Math.min(origMaxRow, removeMaxRow);
-      if (topRow <= bottomRow) {
+      const bottomRow = this.minMaybeInf(origMaxRow, removeMaxRow);
+      if (this.lte({ type: "number", value: topRow }, bottomRow)) {
         remaining.push({
           start: { row: topRow, col: origMinCol },
-          end: { row: bottomRow, col: Math.min(removeMinCol - 1, origMaxCol) },
+          end: {
+            row: bottomRow,
+            col: {
+              type: "number",
+              value: this.min(removeMinCol - 1, origMaxCol),
+            },
+          },
         });
       }
     }
 
     // Right rectangle (to the right of the removed area, within the vertical bounds of overlap)
-    if (origMaxCol > removeMaxCol) {
+    if (this.gt(origMaxCol, removeMaxCol)) {
       const topRow = Math.max(origMinRow, removeMinRow);
-      const bottomRow = Math.min(origMaxRow, removeMaxRow);
-      if (topRow <= bottomRow) {
+      const bottomRow = this.minMaybeInf(origMaxRow, removeMaxRow);
+      if (this.lte({ type: "number", value: topRow }, bottomRow)) {
+        if (removeMaxCol.type === "infinity") {
+          throw new Error("Should not be possible to remove an infinite area");
+        }
         remaining.push({
-          start: { row: topRow, col: Math.max(removeMaxCol + 1, origMinCol) },
+          start: {
+            row: topRow,
+            col: Math.max(origMinCol, removeMaxCol.value + 1),
+          },
           end: { row: bottomRow, col: origMaxCol },
         });
       }
@@ -593,8 +769,8 @@ export class SelectionManager {
     if (
       row < 0 ||
       col < 0 ||
-      (numRows !== Infinity && row >= numRows) ||
-      (numCols !== Infinity && col >= numCols)
+      (numRows.type !== "infinity" && row >= numRows.value) ||
+      (numCols.type !== "infinity" && col >= numCols.value)
     ) {
       return false;
     }
@@ -613,34 +789,34 @@ export class SelectionManager {
     const numCols = this.getNumCols();
 
     // For infinite tables, check if there's a selection covering (0,0) to (Infinity, Infinity)
-    if (numRows === Infinity || numCols === Infinity) {
+    if (numRows.type === "infinity" || numCols.type === "infinity") {
       return this.selections.some((selection) => {
-        const startRow = Math.min(selection.start.row, selection.end.row);
-        const endRow = Math.max(selection.start.row, selection.end.row);
-        const startCol = Math.min(selection.start.col, selection.end.col);
-        const endCol = Math.max(selection.start.col, selection.end.col);
+        const startRow = this.min(selection.start.row, selection.end.row);
+        const endRow = this.max(selection.start.row, selection.end.row);
+        const startCol = this.min(selection.start.col, selection.end.col);
+        const endCol = this.max(selection.start.col, selection.end.col);
 
         return (
           startRow === 0 &&
           startCol === 0 &&
-          endRow === Infinity &&
-          endCol === Infinity
+          endRow.type === "infinity" &&
+          endCol.type === "infinity"
         );
       });
     }
 
     // For finite tables, normalize selections and handle infinity values
     const normalizedSelections = this.selections.map((selection) => {
-      const startRow = Math.min(selection.start.row, selection.end.row);
-      const endRow = Math.max(selection.start.row, selection.end.row);
-      const startCol = Math.min(selection.start.col, selection.end.col);
-      const endCol = Math.max(selection.start.col, selection.end.col);
+      const startRow = this.min(selection.start.row, selection.end.row);
+      const endRow = this.max(selection.start.row, selection.end.row);
+      const startCol = this.min(selection.start.col, selection.end.col);
+      const endCol = this.max(selection.start.col, selection.end.col);
 
       return {
         startRow,
-        endRow: endRow === Infinity ? numRows - 1 : endRow,
+        endRow: endRow.type === "infinity" ? numRows.value - 1 : endRow.value,
         startCol,
-        endCol: endCol === Infinity ? numCols - 1 : endCol,
+        endCol: endCol.type === "infinity" ? numCols.value - 1 : endCol.value,
       };
     });
 
@@ -649,16 +825,16 @@ export class SelectionManager {
       if (
         sel.startRow === 0 &&
         sel.startCol === 0 &&
-        sel.endRow === numRows - 1 &&
-        sel.endCol === numCols - 1
+        sel.endRow === numRows.value - 1 &&
+        sel.endCol === numCols.value - 1
       ) {
         return true;
       }
     }
 
     // Use coordinate compression to check if union covers entire table
-    const rowBoundaries = new Set<number>([0, numRows]);
-    const colBoundaries = new Set<number>([0, numCols]);
+    const rowBoundaries = new Set<number>([0, numRows.value]);
+    const colBoundaries = new Set<number>([0, numCols.value]);
 
     normalizedSelections.forEach((sel) => {
       rowBoundaries.add(sel.startRow);
@@ -679,13 +855,16 @@ export class SelectionManager {
         const regionEndCol = sortedCols[j + 1]! - 1; // Convert back to inclusive
 
         // Skip regions outside the table bounds
-        if (regionStartRow >= numRows || regionStartCol >= numCols) {
+        if (
+          regionStartRow >= numRows.value ||
+          regionStartCol >= numCols.value
+        ) {
           continue;
         }
 
         // Clip region to table bounds
-        const clippedEndRow = Math.min(regionEndRow, numRows - 1);
-        const clippedEndCol = Math.min(regionEndCol, numCols - 1);
+        const clippedEndRow = Math.min(regionEndRow, numRows.value - 1);
+        const clippedEndCol = Math.min(regionEndCol, numCols.value - 1);
 
         // Check if this region is covered by any normalized selection
         const isCovered = normalizedSelections.some((sel) => {
@@ -729,8 +908,8 @@ export class SelectionManager {
       const outOfBounds =
         sRow < 0 ||
         sCol < 0 ||
-        (numRows !== Infinity && sRow >= numRows) ||
-        (numCols !== Infinity && sCol >= numCols);
+        (numRows.type !== "infinity" && sRow >= numRows.value) ||
+        (numCols.type !== "infinity" && sCol >= numCols.value);
 
       if (outOfBounds || !this.isSelected(surroundingCell)) {
         borders.push(border);
@@ -768,42 +947,42 @@ export class SelectionManager {
 
     type Normalized = {
       startRow: number;
-      endRow: number;
+      endRow: MaybeInfNumber;
       startCol: number;
-      endCol: number;
+      endCol: MaybeInfNumber;
     };
 
     const normalizedSelections: Normalized[] = this.selections.map(
-      (selection) => {
-        const startRow = Math.min(selection.start.row, selection.end.row);
-        const endRow = Math.max(selection.start.row, selection.end.row);
-        const startCol = Math.min(selection.start.col, selection.end.col);
-        const endCol = Math.max(selection.start.col, selection.end.col);
+      (selection): Normalized => {
+        const startRow = this.min(selection.start.row, selection.end.row);
+        const endRow = this.max(selection.start.row, selection.end.row);
+        const startCol = this.min(selection.start.col, selection.end.col);
+        const endCol = this.max(selection.start.col, selection.end.col);
 
         return {
           startRow,
           endRow:
-            endRow === Infinity
-              ? numRows === Infinity
-                ? Infinity
-                : numRows - 1
+            endRow.type === "infinity"
+              ? numRows.type === "infinity"
+                ? { type: "infinity" }
+                : { type: "number", value: numRows.value - 1 }
               : endRow,
           startCol,
           endCol:
-            endCol === Infinity
-              ? numCols === Infinity
-                ? Infinity
-                : numCols - 1
+            endCol.type === "infinity"
+              ? numCols.type === "infinity"
+                ? { type: "infinity" }
+                : { type: "number", value: numCols.value - 1 }
               : endCol,
         };
       },
     );
 
     // Quick accept: if any single normalized selection already equals the bounding rectangle
-    const boundingStartRow = Math.min(bounding.start.row, bounding.end.row);
-    const boundingEndRow = Math.max(bounding.start.row, bounding.end.row);
-    const boundingStartCol = Math.min(bounding.start.col, bounding.end.col);
-    const boundingEndCol = Math.max(bounding.start.col, bounding.end.col);
+    const boundingStartRow = this.min(bounding.start.row, bounding.end.row);
+    const boundingEndRow = this.max(bounding.start.row, bounding.end.row);
+    const boundingStartCol = this.min(bounding.start.col, bounding.end.col);
+    const boundingEndCol = this.max(bounding.start.col, bounding.end.col);
 
     for (const sel of normalizedSelections) {
       if (
@@ -820,69 +999,123 @@ export class SelectionManager {
     }
 
     // Coordinate compression within the bounding rectangle.
-    const rowBoundaries = new Set<number>();
-    const colBoundaries = new Set<number>();
+    const rowBoundaries = new Set<number | "INF">();
+    const colBoundaries = new Set<number | "INF">();
 
     // Always include bounding rectangle limits (using +1 exclusive boundary)
     rowBoundaries.add(boundingStartRow);
     rowBoundaries.add(
-      boundingEndRow === Infinity ? Infinity : boundingEndRow + 1,
+      boundingEndRow.type === "infinity" ? "INF" : boundingEndRow.value + 1,
     );
     colBoundaries.add(boundingStartCol);
     colBoundaries.add(
-      boundingEndCol === Infinity ? Infinity : boundingEndCol + 1,
+      boundingEndCol.type === "infinity" ? "INF" : boundingEndCol.value + 1,
     );
 
     // Include every selection edge
     normalizedSelections.forEach((sel) => {
       rowBoundaries.add(sel.startRow);
-      rowBoundaries.add(sel.endRow === Infinity ? Infinity : sel.endRow + 1);
+      rowBoundaries.add(
+        sel.endRow.type === "infinity" ? "INF" : sel.endRow.value + 1,
+      );
       colBoundaries.add(sel.startCol);
-      colBoundaries.add(sel.endCol === Infinity ? Infinity : sel.endCol + 1);
+      colBoundaries.add(
+        sel.endCol.type === "infinity" ? "INF" : sel.endCol.value + 1,
+      );
     });
 
-    const sortedRows = Array.from(rowBoundaries).sort((a, b) => a - b);
-    const sortedCols = Array.from(colBoundaries).sort((a, b) => a - b);
+    const sortedRows = Array.from(rowBoundaries).sort(sort);
+    const sortedCols = Array.from(colBoundaries).sort(sort);
 
     // For every region fully inside the bounding rectangle, ensure it is covered
     for (let i = 0; i < sortedRows.length - 1; i++) {
-      const regionStartRow = sortedRows[i]!;
-      const regionEndRow = sortedRows[i + 1]! - 1; // inclusive end
+      const startRow = sortedRows[i]!;
+      const regionStartRow: MaybeInfNumber =
+        typeof startRow === "number"
+          ? { type: "number", value: startRow }
+          : { type: "infinity" }
+
+      const endRow = sortedRows[i + 1]!;
+      const regionEndRow: MaybeInfNumber =
+        typeof endRow === "number"
+          ? { type: "number", value: endRow - 1 }
+          : { type: "infinity" }
 
       // Skip regions outside the bounding rectangle vertically
-      if (regionEndRow < boundingStartRow) continue;
-      if (boundingEndRow !== Infinity && regionStartRow > boundingEndRow)
+      if (
+        this.lt(regionEndRow, { type: "number", value: boundingStartRow })
+      ) {
         continue;
+      }
+
+      if (
+        boundingEndRow.type !== "infinity" &&
+        this.gt(regionStartRow, boundingEndRow)
+      ) {
+        continue;
+      }
 
       for (let j = 0; j < sortedCols.length - 1; j++) {
-        const regionStartCol = sortedCols[j]!;
-        const regionEndCol = sortedCols[j + 1]! - 1; // inclusive end
+        const startCol = sortedCols[j]!;
+        const endCol = sortedCols[j + 1]!;
+
+        const regionStartCol: MaybeInfNumber =
+          typeof startCol === "number"
+            ? { type: "number", value: startCol }
+            : { type: "infinity" }
+        const regionEndCol: MaybeInfNumber =
+          typeof endCol === "number"
+            ? { type: "number", value: endCol - 1 }
+            : { type: "infinity" }
 
         // Skip regions outside the bounding rectangle horizontally
-        if (regionEndCol < boundingStartCol) continue;
-        if (boundingEndCol !== Infinity && regionStartCol > boundingEndCol)
+        if (
+          this.lt(regionEndCol, {
+            type: "number",
+            value: boundingStartCol,
+          })
+        ) {
           continue;
+        }
+        if (
+          boundingEndCol.type !== "infinity" &&
+          this.gt(regionStartCol, boundingEndCol)
+        ) {
+          continue;
+        }
 
         // Clip region to bounding rectangle limits (important for Infinity ends)
-        const clippedEndRow =
-          boundingEndRow === Infinity
+        const clippedEndRow: MaybeInfNumber =
+          boundingEndRow.type === "infinity"
             ? regionEndRow
-            : Math.min(regionEndRow, boundingEndRow);
-        const clippedEndCol =
-          boundingEndCol === Infinity
+            : {
+                type: "number",
+                value: this.min(boundingEndRow.value, regionEndRow),
+              };
+        const clippedEndCol: MaybeInfNumber =
+          boundingEndCol.type === "infinity"
             ? regionEndCol
-            : Math.min(regionEndCol, boundingEndCol);
+            : {
+                type: "number",
+                value: this.min(boundingEndCol.value, regionEndCol),
+              };
 
-        const clippedStartRow = Math.max(regionStartRow, boundingStartRow);
-        const clippedStartCol = Math.max(regionStartCol, boundingStartCol);
+        const clippedStartRow = this.max(boundingStartRow, regionStartRow);
+        const clippedStartCol = this.max(boundingStartCol, regionStartCol);
 
         // Ensure the clipped region is covered by at least one selection
         const isCovered = normalizedSelections.some((sel) => {
           return (
-            sel.startRow <= clippedStartRow &&
-            (sel.endRow === Infinity || sel.endRow >= clippedEndRow) &&
-            sel.startCol <= clippedStartCol &&
-            (sel.endCol === Infinity || sel.endCol >= clippedEndCol)
+            this.lte(
+              { type: "number", value: sel.startRow },
+              clippedStartRow,
+            ) &&
+            (sel.endRow.type === "infinity" || this.gte(sel.endRow, clippedEndRow)) &&
+            this.lte(
+              { type: "number", value: sel.startCol },
+              clippedStartCol,
+            ) &&
+            (sel.endCol.type === "infinity" || this.gte(sel.endCol, clippedEndCol))
           );
         });
 
@@ -903,38 +1136,28 @@ export class SelectionManager {
     const borders: Border[] = [];
     const selection = this.isSelecting;
     if (selection.type !== "none" && this.cellInSelection(cell, selection)) {
-      const minRow = Math.min(selection.start.row, selection.end.row);
-      const maxRow = Math.max(selection.start.row, selection.end.row);
-      const minCol = Math.min(selection.start.col, selection.end.col);
-      const maxCol = Math.max(selection.start.col, selection.end.col);
+      const minRow = this.min(selection.start.row, selection.end.row);
+      const maxRow = this.max(selection.start.row, selection.end.row);
+      const minCol = this.min(selection.start.col, selection.end.col);
+      const maxCol = this.max(selection.start.col, selection.end.col);
 
       const numRows = this.getNumRows();
       const numCols = this.getNumCols();
 
-      // Handle infinite selections by using actual table bounds
-      const actualMaxRow =
-        maxRow === Infinity
-          ? numRows === Infinity
-            ? Infinity
-            : numRows - 1
-          : maxRow;
-      const actualMaxCol =
-        maxCol === Infinity
-          ? numCols === Infinity
-            ? Infinity
-            : numCols - 1
-          : maxCol;
+      // Handle infinite selections by normalizing to actual table bounds
+      const actualMaxRow = this.normalizeEndBound(maxRow, numRows);
+      const actualMaxCol = this.normalizeEndBound(maxCol, numCols);
 
       if (cell.row === minRow) {
         borders.push("top");
       }
-      if (actualMaxRow !== Infinity && cell.row === actualMaxRow) {
+      if (actualMaxRow.type !== "infinity" && cell.row === actualMaxRow.value) {
         borders.push("bottom");
       }
       if (cell.col === minCol) {
         borders.push("left");
       }
-      if (actualMaxCol !== Infinity && cell.col === actualMaxCol) {
+      if (actualMaxCol.type !== "infinity" && cell.col === actualMaxCol.value) {
         borders.push("right");
       }
     }
@@ -1054,44 +1277,34 @@ export class SelectionManager {
   private getIntervalsForIndex(
     index: number,
     type: "row" | "col",
-  ): Array<{ start: number; end: number }> {
-    const intervals: Array<{ start: number; end: number }> = [];
+  ): Array<{ start: number; end: MaybeInfNumber }> {
+    const intervals: Array<{ start: number; end: MaybeInfNumber }> = [];
 
     for (const selection of this.selections) {
-      const startRow = Math.min(selection.start.row, selection.end.row);
-      const endRow = Math.max(selection.start.row, selection.end.row);
-      const startCol = Math.min(selection.start.col, selection.end.col);
-      const endCol = Math.max(selection.start.col, selection.end.col);
+      const startRow = this.min(selection.start.row, selection.end.row);
+      const endRow = this.max(selection.start.row, selection.end.row);
+      const startCol = this.min(selection.start.col, selection.end.col);
+      const endCol = this.max(selection.start.col, selection.end.col);
 
       // Apply the same logic as cellInSelection for handling infinity
-      const actualEndRow =
-        endRow === Infinity
-          ? this.getNumRows() === Infinity
-            ? Infinity
-            : this.getNumRows() - 1
-          : endRow;
-      const actualEndCol =
-        endCol === Infinity
-          ? this.getNumCols() === Infinity
-            ? Infinity
-            : this.getNumCols() - 1
-          : endCol;
+      const normalizedEndRow = this.normalizeEndBound(endRow, this.getNumRows());
+      const normalizedEndCol = this.normalizeEndBound(endCol, this.getNumCols());
 
       if (type === "row") {
         // Check if this selection covers the row
         if (
           startRow <= index &&
-          (actualEndRow === Infinity || index <= actualEndRow)
+          (normalizedEndRow.type === "infinity" || index <= normalizedEndRow.value)
         ) {
-          intervals.push({ start: startCol, end: actualEndCol });
+          intervals.push({ start: startCol, end: normalizedEndCol });
         }
       } else {
         // Check if this selection covers the column
         if (
           startCol <= index &&
-          (actualEndCol === Infinity || index <= actualEndCol)
+          (normalizedEndCol.type === "infinity" || index <= normalizedEndCol.value)
         ) {
-          intervals.push({ start: startRow, end: actualEndRow });
+          intervals.push({ start: startRow, end: normalizedEndRow });
         }
       }
     }
@@ -1100,8 +1313,8 @@ export class SelectionManager {
   }
 
   private mergeIntervals(
-    intervals: Array<{ start: number; end: number }>,
-  ): Array<{ start: number; end: number }> {
+    intervals: Array<{ start: number; end: MaybeInfNumber }>,
+  ): Array<{ start: number; end: MaybeInfNumber }> {
     if (intervals.length === 0) {
       return [];
     }
@@ -1110,15 +1323,17 @@ export class SelectionManager {
     intervals.sort((a, b) => a.start - b.start);
 
     // Merge overlapping intervals
-    const merged: Array<{ start: number; end: number }> = [intervals[0]!];
+    const merged: Array<{ start: number; end: MaybeInfNumber }> = [
+      intervals[0]!,
+    ];
 
     for (let i = 1; i < intervals.length; i++) {
       const current = intervals[i]!;
       const last = merged[merged.length - 1]!;
 
-      if (current.start <= last.end + 1) {
+      if (last.end.type === "infinity" || current.start <= last.end.value + 1) {
         // Overlapping or adjacent intervals, merge them
-        last.end = Math.max(last.end, current.end);
+        last.end = this.maxMaybeInf(current.end, last.end);
       } else {
         // Non-overlapping interval, add it
         merged.push(current);
@@ -1129,8 +1344,8 @@ export class SelectionManager {
   }
 
   private intervalsSpanFullRange(
-    intervals: Array<{ start: number; end: number }>,
-    maxValue: number,
+    intervals: Array<{ start: number; end: MaybeInfNumber }>,
+    maxValue: MaybeInfNumber,
   ): boolean {
     if (intervals.length !== 1) {
       return false;
@@ -1138,12 +1353,19 @@ export class SelectionManager {
 
     const interval = intervals[0]!;
 
-    if (maxValue === Infinity) {
+    if (maxValue.type === "infinity") {
       // For infinite range, we need coverage from 0 to Infinity
-      return interval.start === 0 && interval.end === Infinity;
+      return interval.start === 0 && interval.end.type === "infinity";
     } else {
       // For finite range, we need coverage from 0 to maxValue-1
-      return interval.start === 0 && interval.end >= maxValue - 1;
+      const maxValueMinusOne: RealNumber = {
+        type: "number",
+        value: maxValue.value - 1,
+      };
+      return (
+        interval.start === 0 &&
+        this.gte(interval.end, maxValueMinusOne)
+      );
     }
   }
 
@@ -1168,36 +1390,26 @@ export class SelectionManager {
     }
 
     const selection = this.isSelecting;
-    const startRow = Math.min(selection.start.row, selection.end.row);
-    const endRow = Math.max(selection.start.row, selection.end.row);
-    const startCol = Math.min(selection.start.col, selection.end.col);
-    const endCol = Math.max(selection.start.col, selection.end.col);
+    const startRow = this.min(selection.start.row, selection.end.row);
+    const endRow = this.max(selection.start.row, selection.end.row);
+    const startCol = this.min(selection.start.col, selection.end.col);
+    const endCol = this.max(selection.start.col, selection.end.col);
 
     // Apply the same logic as cellInSelection for handling infinity
-    const actualEndRow =
-      endRow === Infinity
-        ? this.getNumRows() === Infinity
-          ? Infinity
-          : this.getNumRows() - 1
-        : endRow;
-    const actualEndCol =
-      endCol === Infinity
-        ? this.getNumCols() === Infinity
-          ? Infinity
-          : this.getNumCols() - 1
-        : endCol;
+    const normalizedEndRow = this.normalizeEndBound(endRow, this.getNumRows());
+    const normalizedEndCol = this.normalizeEndBound(endCol, this.getNumCols());
 
     if (type === "row") {
       // Check if the current selection intersects with this row
       return (
         startRow <= index &&
-        (actualEndRow === Infinity || index <= actualEndRow)
+        (normalizedEndRow.type === "infinity" || index <= normalizedEndRow.value)
       );
     } else {
       // Check if the current selection intersects with this column
       return (
         startCol <= index &&
-        (actualEndCol === Infinity || index <= actualEndCol)
+        (normalizedEndCol.type === "infinity" || index <= normalizedEndCol.value)
       );
     }
   }
@@ -1286,16 +1498,18 @@ export class SelectionManager {
       }
     } else if (this.isHovering.type === "group") {
       if (type === "row") {
+        const endRow = this.isHovering.group.end.row;
         if (
           index >= this.isHovering.group.start.row &&
-          index <= this.isHovering.group.end.row
+          (endRow.type === "infinity" || index <= endRow.value)
         ) {
           selectionShadows.push(`inset -2px 0 0 0 #9ec299`); // border right
         }
       } else {
+        const endCol = this.isHovering.group.end.col;
         if (
           index >= this.isHovering.group.start.col &&
-          index <= this.isHovering.group.end.col
+          (endCol.type === "infinity" || index <= endCol.value)
         ) {
           selectionShadows.push(`inset 0 -2px 0 0 #9ec299`); // border bottom
         }
@@ -1312,19 +1526,31 @@ export class SelectionManager {
       return undefined;
     }
     let minCell: { row: number; col: number } | undefined;
-    const evaluateCell = (cell: { row: number; col: number }) => {
-      if (!minCell) {
-        minCell = cell;
+    const evaluateCell = (cell: {
+      row: MaybeInfNumber;
+      col: MaybeInfNumber;
+    }) => {
+      if (cell.row.type === "infinity" || cell.col.type === "infinity") {
         return;
       }
-      if (cell.col < minCell.col) {
-        minCell = cell;
-      } else if (cell.col === minCell.col && cell.row < minCell.row) {
-        minCell = cell;
+      if (!minCell) {
+        minCell = { row: cell.row.value, col: cell.col.value };
+        return;
+      }
+      if (cell.col.value < minCell.col) {
+        minCell = { row: cell.row.value, col: cell.col.value };
+      } else if (
+        cell.col.value === minCell.col &&
+        cell.row.value < minCell.row
+      ) {
+        minCell = { row: cell.row.value, col: cell.col.value };
       }
     };
     this.selections.forEach((selection) => {
-      evaluateCell(selection.start);
+      evaluateCell({
+        row: { type: "number", value: selection.start.row },
+        col: { type: "number", value: selection.start.col },
+      });
       evaluateCell(selection.end);
     });
     return minCell;
@@ -1339,28 +1565,30 @@ export class SelectionManager {
       return undefined;
     }
 
-    let minRow = Infinity;
-    let maxRow = -Infinity;
-    let minCol = Infinity;
-    let maxCol = -Infinity;
+    let minRow: number = Infinity;
+    let maxRow: MaybeInfNumber = { type: "number", value: 0 };
+    let minCol: number = Infinity;
+    let maxCol: MaybeInfNumber = { type: "number", value: 0 };
 
     this.selections.forEach((selection) => {
-      const startRow = Math.min(selection.start.row, selection.end.row);
-      const endRow = Math.max(selection.start.row, selection.end.row);
-      const startCol = Math.min(selection.start.col, selection.end.col);
-      const endCol = Math.max(selection.start.col, selection.end.col);
+      const startRow = this.min(selection.start.row, selection.end.row);
+      const endRow = this.max(selection.start.row, selection.end.row);
+      const startCol = this.min(selection.start.col, selection.end.col);
+      const endCol = this.max(selection.start.col, selection.end.col);
 
-      // Handle infinite selections by using actual table bounds
-      const actualEndRow =
-        endRow === Infinity ? this.getActualEndRow() : endRow;
-      const actualEndCol =
-        endCol === Infinity ? this.getActualEndCol() : endCol;
+      // Handle infinite selections by normalizing to actual table bounds
+      const normalizedEndRow = this.normalizeEndBound(endRow, this.getNumRows());
+      const normalizedEndCol = this.normalizeEndBound(endCol, this.getNumCols());
 
-      minRow = Math.min(minRow, startRow);
-      maxRow = Math.max(maxRow, actualEndRow);
-      minCol = Math.min(minCol, startCol);
-      maxCol = Math.max(maxCol, actualEndCol);
+      minRow = Math.min(startRow, minRow);
+      maxRow = this.maxMaybeInf(normalizedEndRow, maxRow);
+      minCol = Math.min(startCol, minCol);
+      maxCol = this.maxMaybeInf(normalizedEndCol, maxCol);
     });
+
+    if (minRow === Infinity || minCol === Infinity) {
+      return undefined;
+    }
 
     return {
       start: { row: minRow, col: minCol },
@@ -1380,56 +1608,83 @@ export class SelectionManager {
 
     // Normalize all selections and handle infinite values
     const normalizedSelections = this.selections.map((selection) => {
-      const startRow = Math.min(selection.start.row, selection.end.row);
-      const endRow = Math.max(selection.start.row, selection.end.row);
-      const startCol = Math.min(selection.start.col, selection.end.col);
-      const endCol = Math.max(selection.start.col, selection.end.col);
+      const startRow = this.min(selection.start.row, selection.end.row);
+      const endRow = this.max(selection.start.row, selection.end.row);
+      const startCol = this.min(selection.start.col, selection.end.col);
+      const endCol = this.max(selection.start.col, selection.end.col);
 
       return {
         startRow,
-        endRow: endRow === Infinity ? this.getActualEndRow() : endRow,
+        endRow: endRow.type === "infinity" ? this.getActualEndRow() : endRow,
         startCol,
-        endCol: endCol === Infinity ? this.getActualEndCol() : endCol,
+        endCol: endCol.type === "infinity" ? this.getActualEndCol() : endCol,
       };
     });
 
     // Collect all unique row and column boundaries
-    const rowBoundaries = new Set<number>();
-    const colBoundaries = new Set<number>();
+    const rowBoundaries = new Set<number | "INF">();
+    const colBoundaries = new Set<number | "INF">();
 
     normalizedSelections.forEach((sel) => {
       rowBoundaries.add(sel.startRow);
-      rowBoundaries.add(sel.endRow + 1); // +1 for exclusive end boundary
+      rowBoundaries.add(
+        sel.endRow.type === "infinity" ? "INF" : sel.endRow.value + 1,
+      ); // +1 for exclusive end boundary
       colBoundaries.add(sel.startCol);
-      colBoundaries.add(sel.endCol + 1); // +1 for exclusive end boundary
+      colBoundaries.add(
+        sel.endCol.type === "infinity" ? "INF" : sel.endCol.value + 1,
+      ); // +1 for exclusive end boundary
     });
 
-    const sortedRows = Array.from(rowBoundaries).sort((a, b) => a - b);
-    const sortedCols = Array.from(colBoundaries).sort((a, b) => a - b);
+    const sortedRows = Array.from(rowBoundaries).sort(sort);
+    const sortedCols = Array.from(colBoundaries).sort(sort);
 
     const result: SMArea[] = [];
 
     // For each rectangular region between boundaries
     for (let i = 0; i < sortedRows.length - 1; i++) {
       for (let j = 0; j < sortedCols.length - 1; j++) {
-        const regionStartRow = sortedRows[i]!;
-        const regionEndRow = sortedRows[i + 1]! - 1; // Convert back to inclusive
-        const regionStartCol = sortedCols[j]!;
-        const regionEndCol = sortedCols[j + 1]! - 1; // Convert back to inclusive
+        const startRow = sortedRows[i]!;
+        const endRow = sortedRows[i + 1]!;
+        const startCol = sortedCols[j]!;
+        const endCol = sortedCols[j + 1]!;
+
+        const regionStartRow: MaybeInfNumber =
+          typeof startRow === "number"
+            ? { type: "number", value: startRow }
+            : { type: "infinity" }
+        const regionEndRow: MaybeInfNumber =
+          typeof endRow === "number"
+            ? { type: "number", value: endRow - 1 }
+            : { type: "infinity" }
+        const regionStartCol: MaybeInfNumber =
+          typeof startCol === "number"
+            ? { type: "number", value: startCol }
+            : { type: "infinity" }
+        const regionEndCol: MaybeInfNumber =
+          typeof endCol === "number"
+            ? { type: "number", value: endCol - 1 }
+            : { type: "infinity" }
 
         // Check if any original selection covers this region
         const isCovered = normalizedSelections.some((sel) => {
           return (
-            sel.startRow <= regionStartRow &&
-            sel.endRow >= regionEndRow &&
-            sel.startCol <= regionStartCol &&
-            sel.endCol >= regionEndCol
+            this.lte({ type: "number", value: sel.startRow }, regionStartRow) &&
+            this.gte(sel.endRow, regionEndRow) &&
+            this.lte({ type: "number", value: sel.startCol }, regionStartCol) &&
+            this.gte(sel.endCol, regionEndCol)
           );
         });
 
         if (isCovered) {
+          if (regionStartRow.type === "infinity") {
+            throw new Error("Invalid regionStartRow");
+          }
+          if (regionStartCol.type === "infinity") {
+            throw new Error("Invalid regionStartCol");
+          }
           result.push({
-            start: { row: regionStartRow, col: regionStartCol },
+            start: { row: regionStartRow.value, col: regionStartCol.value },
             end: { row: regionEndRow, col: regionEndCol },
           });
         }
@@ -1541,30 +1796,49 @@ export class SelectionManager {
         return;
       }
       if (event.key === "ArrowUp") {
-        if (lastSelection.end.row > 0) {
-          lastSelection.end.row = 0;
+        if (
+          this.gt(lastSelection.end.row, {
+            type: "number",
+            value: 0,
+          })
+        ) {
+          lastSelection.end.row = { type: "number", value: 0 };
           shouldUpdate = true;
         }
       }
       if (event.key === "ArrowDown") {
         const numRows = this.getNumRows();
-        const maxRow = numRows === Infinity ? Infinity : numRows - 1;
-        if (lastSelection.end.row < maxRow) {
-          lastSelection.end.row = maxRow;
+        const maxRow =
+          numRows.type === "infinity" ? Infinity : numRows.value - 1;
+        if (
+          this.lt(lastSelection.end.row, {
+            type: "number",
+            value: maxRow,
+          })
+        ) {
+          lastSelection.end.row = { type: "number", value: maxRow };
           shouldUpdate = true;
         }
       }
       if (event.key === "ArrowLeft") {
-        if (lastSelection.end.col > 0) {
-          lastSelection.end.col = 0;
+        if (
+          this.gt(lastSelection.end.col, { type: "number", value: 0 })
+        ) {
+          lastSelection.end.col = { type: "number", value: 0 };
           shouldUpdate = true;
         }
       }
       if (event.key === "ArrowRight") {
         const numCols = this.getNumCols();
-        const maxCol = numCols === Infinity ? Infinity : numCols - 1;
-        if (lastSelection.end.col < maxCol) {
-          lastSelection.end.col = maxCol;
+        const maxCol =
+          numCols.type === "infinity" ? Infinity : numCols.value - 1;
+        if (
+          this.lt(lastSelection.end.col, {
+            type: "number",
+            value: maxCol,
+          })
+        ) {
+          lastSelection.end.col = { type: "number", value: maxCol };
           shouldUpdate = true;
         }
       }
@@ -1586,8 +1860,14 @@ export class SelectionManager {
           (s) =>
             s.start.row === 0 &&
             s.start.col === 0 &&
-            s.end.row === (numRows === Infinity ? Infinity : numRows - 1) &&
-            s.end.col === (numCols === Infinity ? Infinity : numCols - 1),
+            this.equals(s.end.row, {
+              type: "number",
+              value: numRows.type === "infinity" ? Infinity : numRows.value - 1,
+            }) &&
+            this.equals(s.end.col, {
+              type: "number",
+              value: numCols.type === "infinity" ? Infinity : numCols.value - 1,
+            }),
         )
       ) {
         return;
@@ -1598,8 +1878,14 @@ export class SelectionManager {
         {
           start: { row: 0, col: 0 },
           end: {
-            row: numRows === Infinity ? Infinity : numRows - 1,
-            col: numCols === Infinity ? Infinity : numCols - 1,
+            row:
+              numRows.type === "infinity"
+                ? { type: "infinity" }
+                : { type: "number", value: numRows.value - 1 },
+            col:
+              numCols.type === "infinity"
+                ? { type: "infinity" }
+                : { type: "number", value: numCols.value - 1 },
           },
         },
       ];
@@ -1618,12 +1904,16 @@ export class SelectionManager {
 
       // Get the current active position (start of last selection, or 0,0 if no selection)
       const lastSelection = this.selections[this.selections.length - 1];
-      const currentRow = lastSelection
-        ? lastSelection[event.shiftKey ? "end" : "start"].row
-        : 0;
-      const currentCol = lastSelection
-        ? lastSelection[event.shiftKey ? "end" : "start"].col
-        : 0;
+      const currentRow: MaybeInfNumber = lastSelection
+        ? event.shiftKey
+          ? lastSelection.end.row
+          : { type: "number", value: lastSelection.start.row }
+        : { type: "number", value: 0 };
+      const currentCol: MaybeInfNumber = lastSelection
+        ? event.shiftKey
+          ? lastSelection.end.col
+          : { type: "number", value: lastSelection.start.col }
+        : { type: "number", value: 0 };
 
       // Calculate new position based on arrow key
       let newRow = currentRow;
@@ -1632,20 +1922,48 @@ export class SelectionManager {
       const numRows = this.getNumRows();
       const numCols = this.getNumCols();
 
-      if (event.key === "ArrowUp" && newRow > 0) {
-        newRow--;
+      if (
+        event.key === "ArrowUp" &&
+        this.gt(newRow, { type: "number", value: 0 })
+      ) {
+        if (newRow.type === "number") {
+          newRow = { type: "number", value: newRow.value - 1 };
+        } else {
+          newRow = { type: "infinity" };
+        }
       } else if (
         event.key === "ArrowDown" &&
-        (numRows === Infinity || newRow < numRows - 1)
+        this.lt(newRow, {
+          type: "number",
+          value: numRows.type === "infinity" ? Infinity : numRows.value - 1,
+        })
       ) {
-        newRow++;
-      } else if (event.key === "ArrowLeft" && newCol > 0) {
-        newCol--;
+        if (newRow.type === "number") {
+          newRow = { type: "number", value: newRow.value + 1 };
+        } else {
+          newRow = { type: "infinity" };
+        }
+      } else if (
+        event.key === "ArrowLeft" &&
+        this.gt(newCol, { type: "number", value: 0 })
+      ) {
+        if (newCol.type === "number") {
+          newCol = { type: "number", value: newCol.value - 1 };
+        } else {
+          newCol = { type: "infinity" };
+        }
       } else if (
         event.key === "ArrowRight" &&
-        (numCols === Infinity || newCol < numCols - 1)
+        this.lt(newCol, {
+          type: "number",
+          value: numCols.type === "infinity" ? Infinity : numCols.value - 1,
+        })
       ) {
-        newCol++;
+        if (newCol.type === "number") {
+          newCol = { type: "number", value: newCol.value + 1 };
+        } else {
+          newCol = { type: "infinity" };
+        }
       }
 
       // If position changed
@@ -1655,10 +1973,13 @@ export class SelectionManager {
           lastSelection.end = { row: newRow, col: newCol };
           shouldUpdate = true;
         } else {
+          if (newRow.type === "infinity" || newCol.type === "infinity") {
+            throw new Error("Invalid newRow or newCol");
+          }
           // Create new single-cell selection
           this.selections = [
             {
-              start: { row: newRow, col: newCol },
+              start: { row: newRow.value, col: newCol.value },
               end: { row: newRow, col: newCol },
             },
           ];
@@ -1696,13 +2017,22 @@ export class SelectionManager {
 
       // Check if this cell is in any of the selections
       const isInSelection = this.selections.some((selection) => {
-        const startRow = Math.min(selection.start.row, selection.end.row);
-        const endRow = Math.max(selection.start.row, selection.end.row);
-        const startCol = Math.min(selection.start.col, selection.end.col);
-        const endCol = Math.max(selection.start.col, selection.end.col);
+        const startRow = this.min(selection.start.row, selection.end.row);
+        const endRow = this.max(selection.start.row, selection.end.row);
+        const startCol = this.min(selection.start.col, selection.end.col);
+        const endCol = this.max(selection.start.col, selection.end.col);
 
         return (
-          row >= startRow && row <= endRow && col >= startCol && col <= endCol
+          this.gte(
+            { type: "number", value: row },
+            { type: "number", value: startRow },
+          ) &&
+          this.lte({ type: "number", value: row }, endRow) &&
+          this.gte(
+            { type: "number", value: col },
+            { type: "number", value: startCol },
+          ) &&
+          this.lte({ type: "number", value: col }, endCol)
         );
       });
 
@@ -1744,12 +2074,12 @@ export class SelectionManager {
   public getCellsWithData(
     area: SMArea,
   ): { rowIndex: number; colIndex: number }[] {
-    if (area.end.row === Infinity || area.end.col === Infinity) {
+    if (area.end.row.type === "infinity" || area.end.col.type === "infinity") {
       throw new Error("Cannot iterate over infinite selections");
     }
     const cells: { rowIndex: number; colIndex: number }[] = [];
-    for (let row = area.start.row; row <= area.end.row; row++) {
-      for (let col = area.start.col; col <= area.end.col; col++) {
+    for (let row = area.start.row; row <= area.end.row.value; row++) {
+      for (let col = area.start.col; col <= area.end.col.value; col++) {
         cells.push({ rowIndex: row, colIndex: col });
       }
     }
@@ -1789,21 +2119,38 @@ export class SelectionManager {
 
     // Check for infinite selections
     if (
-      boundingRect.end.row === Infinity ||
-      boundingRect.end.col === Infinity
+      boundingRect.end.row.type === "infinity" ||
+      boundingRect.end.col.type === "infinity"
     ) {
       throw new Error("Cannot iterate over infinite selections");
     }
 
     for (const selection of selections) {
-      if (selection.end.row === Infinity || selection.end.col === Infinity) {
+      if (
+        selection.end.row.type === "infinity" ||
+        selection.end.col.type === "infinity"
+      ) {
         throw new Error("Cannot iterate over infinite selections");
       }
     }
 
     selections.forEach((selection) => {
-      for (let row = selection.start.row; row <= selection.end.row; row++) {
-        for (let col = selection.start.col; col <= selection.end.col; col++) {
+      if (
+        selection.end.row.type === "infinity" ||
+        selection.end.col.type === "infinity"
+      ) {
+        throw new Error("Cannot iterate over infinite selections");
+      }
+      for (
+        let row = selection.start.row;
+        row <= selection.end.row.value;
+        row++
+      ) {
+        for (
+          let col = selection.start.col;
+          col <= selection.end.col.value;
+          col++
+        ) {
           callback({
             absolute: { row, col },
             relative: {
@@ -1845,9 +2192,7 @@ export class SelectionManager {
     expandFrom: SMArea,
     fillArea: SMArea,
   ) => void)[] = [];
-  listenToFill(
-    callback: (expandFrom: SMArea, fillArea: SMArea) => void,
-  ) {
+  listenToFill(callback: (expandFrom: SMArea, fillArea: SMArea) => void) {
     this.listenToFillListeners.push(callback);
     return () => {
       this.listenToFillListeners = this.listenToFillListeners.filter(
@@ -1911,58 +2256,54 @@ export class SelectionManager {
     }
 
     const selection = this.isSelecting;
-    const startRow = Math.min(selection.start.row, selection.end.row);
-    const endRow = Math.max(selection.start.row, selection.end.row);
-    const startCol = Math.min(selection.start.col, selection.end.col);
-    const endCol = Math.max(selection.start.col, selection.end.col);
+    const startRow = this.min(selection.start.row, selection.end.row);
+    const endRow = this.max(selection.start.row, selection.end.row);
+    const startCol = this.min(selection.start.col, selection.end.col);
+    const endCol = this.max(selection.start.col, selection.end.col);
 
     // Apply the same logic as cellInSelection for handling infinity
-    const actualEndRow =
-      endRow === Infinity
-        ? this.getNumRows() === Infinity
-          ? Infinity
-          : this.getNumRows() - 1
-        : endRow;
-    const actualEndCol =
-      endCol === Infinity
-        ? this.getNumCols() === Infinity
-          ? Infinity
-          : this.getNumCols() - 1
-        : endCol;
+    const normalizedEndRow = this.normalizeEndBound(endRow, this.getNumRows());
+    const normalizedEndCol = this.normalizeEndBound(endCol, this.getNumCols());
 
     if (type === "row") {
       // Check if current selection covers the entire row
       if (
         !(
           startRow <= index &&
-          (actualEndRow === Infinity || index <= actualEndRow)
+          (normalizedEndRow.type === "infinity" || index <= normalizedEndRow.value)
         )
       ) {
         return false;
       }
       // Check if the column range covers the entire width
       const numCols = this.getNumCols();
-      if (numCols === Infinity) {
-        return startCol === 0 && actualEndCol === Infinity;
+      if (numCols.type === "infinity") {
+        return startCol === 0 && normalizedEndCol.type === "infinity";
       } else {
-        return startCol === 0 && actualEndCol >= numCols - 1;
+        return (
+          startCol === 0 &&
+          this.gte(normalizedEndCol, { type: "number", value: numCols.value - 1 })
+        );
       }
     } else {
       // Check if current selection covers the entire column
       if (
         !(
           startCol <= index &&
-          (actualEndCol === Infinity || index <= actualEndCol)
+          (normalizedEndCol.type === "infinity" || index <= normalizedEndCol.value)
         )
       ) {
         return false;
       }
       // Check if the row range covers the entire height
       const numRows = this.getNumRows();
-      if (numRows === Infinity) {
-        return startRow === 0 && actualEndRow === Infinity;
+      if (numRows.type === "infinity") {
+        return startRow === 0 && normalizedEndRow.type === "infinity";
       } else {
-        return startRow === 0 && actualEndRow >= numRows - 1;
+        return (
+          startRow === 0 &&
+          this.gte(normalizedEndRow, { type: "number", value: numRows.value - 1 })
+        );
       }
     }
   }
@@ -2123,8 +2464,22 @@ export class SelectionManager {
       const targetCol = startCol + cellData.colIndex;
 
       // Check bounds if limits are specified
-      if (this.getNumRows() && targetRow >= this.getNumRows()) return;
-      if (this.getNumCols() && targetCol >= this.getNumCols()) return;
+      if (
+        this.getNumRows() &&
+        this.gt(
+          { type: "number", value: targetRow },
+          this.getNumRows(),
+        )
+      )
+        return;
+      if (
+        this.getNumCols() &&
+        this.gt(
+          { type: "number", value: targetCol },
+          this.getNumCols(),
+        )
+      )
+        return;
 
       updates.push({
         value: cellData.value,
@@ -2178,8 +2533,14 @@ export class SelectionManager {
         const fillHandleBaseSelection = this.getFillHandleBaseSelection();
         if (fillHandleBaseSelection) {
           const fillArea = this.isSelecting;
+          const endOfSelection = this.isSelecting.end;
           if (
-            this.cellInSelection(this.isSelecting.end, fillHandleBaseSelection)
+            endOfSelection.col.type === "number" &&
+            endOfSelection.row.type === "number" &&
+            this.cellInSelection(
+              { row: endOfSelection.row.value, col: endOfSelection.col.value },
+              fillHandleBaseSelection,
+            )
           ) {
             this.deselectArea(this.isSelecting);
             this.listenToFillListeners.forEach((listener) =>

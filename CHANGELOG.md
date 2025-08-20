@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.9
+
+### Patch Changes
+
+- change the types to require an explicity infinity type for infinite grids
+
 ## 0.0.8
 
 ### Patch Changes

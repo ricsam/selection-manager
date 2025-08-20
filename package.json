@@ -3,7 +3,7 @@
   "module": "src/lib.ts",
   "types": "src/lib.ts",
   "type": "module",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "devDependencies": {
     "@types/bun": "latest",
     "react": "^19.1.0",
@@ -24,7 +24,8 @@
   },
   "scripts": {
     "dev": "bun --hot index.html",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
   },
   "prettier": {}
 }

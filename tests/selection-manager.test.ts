@@ -8,8 +8,8 @@ describe("SelectionManager", () => {
   beforeEach(() => {
     updateCallback = mock();
     selectionManager = new SelectionManager(
-      () => 10, // getNumRows
-      () => 5, // getNumCols
+      () => ({ type: "number", value: 10 }), // getNumRows
+      () => ({ type: "number", value: 5 }), // getNumCols
       () => [], // getGroups
     );
     selectionManager.onNextState(updateCallback);
@@ -26,13 +26,17 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.mouseUp();
 
       expect(selectionManager.selections).toHaveLength(1);
       expect(selectionManager.selections[0]).toMatchObject({
         start: { row: 2, col: 3 },
-        end: { row: 2, col: 3 },
+        end: {
+          row: { type: "number", value: 2 },
+          col: { type: "number", value: 3 },
+        },
       });
       expect(selectionManager.isSelected({ row: 2, col: 3 })).toBe(true);
       expect(selectionManager.hasSelection()).toBe(true);
@@ -43,6 +47,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.cellMouseEnter(3, 4);
       selectionManager.mouseUp();
@@ -50,7 +55,10 @@ describe("SelectionManager", () => {
       expect(selectionManager.selections).toHaveLength(1);
       expect(selectionManager.selections[0]).toMatchObject({
         start: { row: 1, col: 1 },
-        end: { row: 3, col: 4 },
+        end: {
+          row: { type: "number", value: 3 },
+          col: { type: "number", value: 4 },
+        },
       });
 
       // Check that cells in the range are selected
@@ -70,6 +78,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.mouseUp();
 
@@ -78,6 +87,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: true,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.mouseUp();
 
@@ -93,6 +103,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.cellMouseEnter(2, 2);
       selectionManager.mouseUp();
@@ -105,6 +116,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: true,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.mouseUp();
 
@@ -118,6 +130,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.mouseUp();
 
@@ -126,13 +139,17 @@ describe("SelectionManager", () => {
         shiftKey: true,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.mouseUp();
 
       expect(selectionManager.selections).toHaveLength(1);
       expect(selectionManager.selections[0]).toMatchObject({
         start: { row: 2, col: 2 },
-        end: { row: 4, col: 4 },
+        end: {
+          row: { type: "number", value: 4 },
+          col: { type: "number", value: 4 },
+        },
       });
       expect(selectionManager.isSelected({ row: 3, col: 3 })).toBe(true);
     });
@@ -144,13 +161,17 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        
       });
       selectionManager.mouseUp();
 
       expect(selectionManager.selections).toHaveLength(1);
       expect(selectionManager.selections[0]).toMatchObject({
         start: { row: 2, col: 0 },
-        end: { row: 2, col: 4 }, // numCols - 1
+        end: {
+          row: { type: "number", value: 2 },
+          col: { type: "number", value: 4 },
+        }, // numCols - 1
       });
       expect(selectionManager.isWholeRowSelected(2)).toBe(true);
       expect(selectionManager.isSelected({ row: 2, col: 0 })).toBe(true);
@@ -163,13 +184,17 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
-      });
+        
+  });
       selectionManager.mouseUp();
 
       expect(selectionManager.selections).toHaveLength(1);
       expect(selectionManager.selections[0]).toMatchObject({
         start: { row: 0, col: 3 },
-        end: { row: 9, col: 3 }, // numRows - 1
+        end: {
+          row: { type: "number", value: 9 },
+          col: { type: "number", value: 3 },
+        }, // numRows - 1
       });
       expect(selectionManager.isWholeColSelected(3)).toBe(true);
       expect(selectionManager.isSelected({ row: 0, col: 3 })).toBe(true);
@@ -231,6 +256,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.mouseUp();
 
@@ -246,7 +272,10 @@ describe("SelectionManager", () => {
       expect(selectionManager.selections).toHaveLength(1);
       expect(selectionManager.selections[0]).toMatchObject({
         start: { row: 2, col: 3 },
-        end: { row: 2, col: 3 },
+        end: {
+          row: { type: "number", value: 2 },
+          col: { type: "number", value: 3 },
+        },
       });
     });
 
@@ -256,6 +285,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
         selectionManager.mouseUp();
 
@@ -271,7 +301,10 @@ describe("SelectionManager", () => {
       expect(selectionManager.selections).toHaveLength(1);
       expect(selectionManager.selections[0]).toMatchObject({
         start: { row: 2, col: 2 },
-        end: { row: 2, col: 3 },
+        end: {
+          row: { type: "number", value: 2 },
+          col: { type: "number", value: 3 },
+        },
       });
     });
 
@@ -289,7 +322,10 @@ describe("SelectionManager", () => {
       expect(selectionManager.selections).toHaveLength(1);
       expect(selectionManager.selections[0]).toMatchObject({
         start: { row: 0, col: 0 },
-        end: { row: 9, col: 4 }, // numRows-1, numCols-1
+        end: {
+          row: { type: "number", value: 9 },
+          col: { type: "number", value: 4 },
+        }, // numRows-1, numCols-1
       });
     });
 
@@ -299,6 +335,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.mouseUp();
       selectionManager.focus();
@@ -325,6 +362,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.mouseUp();
 
@@ -339,7 +377,10 @@ describe("SelectionManager", () => {
 
       expect(selectionManager.selections[0]).toMatchObject({
         start: { row: 2, col: 2 },
-        end: { row: 0, col: 2 },
+        end: {
+          row: { type: "number", value: 0 },
+          col: { type: "number", value: 2 },
+        },
       });
     });
   });
@@ -364,6 +405,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.cellMouseEnter(3, 3);
       selectionManager.mouseUp();
@@ -413,6 +455,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.cellMouseEnter(2, 2);
       selectionManager.mouseUp();
@@ -443,8 +486,8 @@ describe("SelectionManager", () => {
 
     beforeEach(() => {
       infiniteSelectionManager = new SelectionManager(
-        () => Infinity, // getNumRows
-        () => Infinity, // getNumCols
+        () => ({ type: "infinity" }), // getNumRows
+        () => ({ type: "infinity" }), // getNumCols
         () => [], // getGroups
       );
     });
@@ -459,7 +502,10 @@ describe("SelectionManager", () => {
 
       expect(infiniteSelectionManager.selections[0]).toMatchObject({
         start: { row: 2, col: 0 },
-        end: { row: 2, col: Infinity },
+        end: {
+          row: { type: "number", value: 2 },
+          col: { type: "infinity" },
+        },
       });
       expect(infiniteSelectionManager.isWholeRowSelected(2)).toBe(true);
     });
@@ -474,7 +520,7 @@ describe("SelectionManager", () => {
 
       expect(infiniteSelectionManager.selections[0]).toMatchObject({
         start: { row: 0, col: 3 },
-        end: { row: Infinity, col: 3 },
+        end: { row: { type: "infinity" }, col: { type: "number", value: 3 } },
       });
       expect(infiniteSelectionManager.isWholeColSelected(3)).toBe(true);
     });
@@ -490,7 +536,7 @@ describe("SelectionManager", () => {
 
       expect(infiniteSelectionManager.selections[0]).toMatchObject({
         start: { row: 0, col: 0 },
-        end: { row: Infinity, col: Infinity },
+        end: { row: { type: "infinity" }, col: { type: "infinity" } },
       });
     });
   });
@@ -509,6 +555,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.mouseUp();
 
@@ -523,7 +570,10 @@ describe("SelectionManager", () => {
 
       expect(selectionManager.selections[0]).toMatchObject({
         start: { row: 0, col: 0 },
-        end: { row: 0, col: 0 },
+        end: {
+          row: { type: "number", value: 0 },
+          col: { type: "number", value: 0 },
+        },
       });
 
       // Try to move left (should stay at 0)
@@ -537,7 +587,10 @@ describe("SelectionManager", () => {
 
       expect(selectionManager.selections[0]).toMatchObject({
         start: { row: 0, col: 0 },
-        end: { row: 0, col: 0 },
+        end: {
+          row: { type: "number", value: 0 },
+          col: { type: "number", value: 0 },
+        },
       });
     });
 
@@ -546,6 +599,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.cellMouseEnter(2, 2);
 
@@ -564,6 +618,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.cellMouseEnter(2, 2);
       selectionManager.mouseUp();
@@ -573,6 +628,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: true,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.cellMouseEnter(2, 4);
       selectionManager.mouseUp();
@@ -586,6 +642,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.cellMouseEnter(4, 3);
       selectionManager.mouseUp();
@@ -595,6 +652,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: true,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.cellMouseEnter(9, 3);
       selectionManager.mouseUp();
@@ -608,6 +666,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.cellMouseEnter(2, 1);
       selectionManager.mouseUp();
@@ -617,6 +676,7 @@ describe("SelectionManager", () => {
         shiftKey: false,
         ctrlKey: true,
         metaKey: false,
+        isFillHandle: false,
       });
       selectionManager.cellMouseEnter(2, 4);
       selectionManager.mouseUp();

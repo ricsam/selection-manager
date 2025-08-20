@@ -47,8 +47,17 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
         if (!boundingRect) return;
 
         // Create grid covering bounding rectangle
-        const gridHeight = boundingRect.end.row - boundingRect.start.row + 1;
-        const gridWidth = boundingRect.end.col - boundingRect.start.col + 1;
+        if (
+          boundingRect.end.col.type === "infinity" ||
+          boundingRect.end.row.type === "infinity"
+        ) {
+          throw new Error("Cannot copy infinite selections");
+        }
+
+        const gridHeight =
+          boundingRect.end.row.value - boundingRect.start.row + 1;
+        const gridWidth =
+          boundingRect.end.col.value - boundingRect.start.col + 1;
         const grid: string[][] = Array(gridHeight)
           .fill(null)
           .map(() => Array(gridWidth).fill(""));
@@ -304,8 +313,8 @@ function Test1() {
     null,
   );
   const selectionManager = useInitializeSelectionManager({
-    getNumRows: () => 8,
-    getNumCols: () => 8,
+    getNumRows: () => ({ type: "number", value: 8 }),
+    getNumCols: () => ({ type: "number", value: 8 }),
     containerElement,
   });
 
@@ -324,12 +333,24 @@ function Test2() {
     null,
   );
   const selectionManager = useInitializeSelectionManager({
-    getNumRows: () => 8,
-    getNumCols: () => 8,
+    getNumRows: () => ({ type: "number", value: 8 }),
+    getNumCols: () => ({ type: "number", value: 8 }),
     initialState: {
       selections: [
-        { start: { row: 1, col: 1 }, end: { row: 2, col: 2 } },
-        { start: { row: 4, col: 4 }, end: { row: 5, col: 5 } },
+        {
+          start: { row: 1, col: 1 },
+          end: {
+            row: { type: "number", value: 2 },
+            col: { type: "number", value: 2 },
+          },
+        },
+        {
+          start: { row: 4, col: 4 },
+          end: {
+            row: { type: "number", value: 5 },
+            col: { type: "number", value: 5 },
+          },
+        },
       ],
     },
     containerElement,
@@ -351,7 +372,12 @@ function Test3() {
   );
   const [controlledState, setControlledState] = useState<SelectionManagerState>(
     {
-      selections: [{ start: { row: 0, col: 0 }, end: { row: 1, col: 7 } }],
+      selections: [
+        {
+          start: { row: 0, col: 0 },
+          end: { row: { type: "number", value: 1 }, col: { type: "number", value: 7 } },
+        },
+      ],
       hasFocus: false,
       isSelecting: { type: "none" },
       isEditing: { type: "none" },
@@ -360,8 +386,8 @@ function Test3() {
   );
 
   const selectionManager = useInitializeSelectionManager({
-    getNumRows: () => 8,
-    getNumCols: () => 8,
+    getNumRows: () => ({ type: "number", value: 8 }),
+    getNumCols: () => ({ type: "number", value: 8 }),
     state: controlledState,
     containerElement,
   });
@@ -383,8 +409,8 @@ function Test3() {
                   col: Math.floor(Math.random() * 8),
                 },
                 end: {
-                  row: Math.floor(Math.random() * 8),
-                  col: Math.floor(Math.random() * 8),
+                  row: { type: "number", value: Math.floor(Math.random() * 8) },
+                  col: { type: "number", value: Math.floor(Math.random() * 8) },
                 },
               },
             ],
@@ -427,8 +453,8 @@ function Test4() {
   );
   const [reportedSelections, setReportedSelections] = useState<SMArea[]>([]);
   const selectionManager = useInitializeSelectionManager({
-    getNumRows: () => 8,
-    getNumCols: () => 8,
+    getNumRows: () => ({ type: "number", value: 8 }),
+    getNumCols: () => ({ type: "number", value: 8 }),
     onStateChange: (state) => {
       console.log("Test 4 - Selection changed:", state);
       setReportedSelections([...state.selections]);
@@ -458,7 +484,7 @@ function Test5() {
   );
   const [fullyControlledState, setFullyControlledState] =
     useState<SelectionManagerState>({
-      selections: [{ start: { row: 3, col: 3 }, end: { row: 3, col: 3 } }],
+      selections: [{ start: { row: 3, col: 3 }, end: { row: { type: "number", value: 3 }, col: { type: "number", value: 3 } } }],
       hasFocus: false,
       isSelecting: { type: "none" },
       isEditing: { type: "none" },
@@ -466,8 +492,8 @@ function Test5() {
     });
 
   const selectionManager = useInitializeSelectionManager({
-    getNumRows: () => 8,
-    getNumCols: () => 8,
+    getNumRows: () => ({ type: "number", value: 8 }),
+    getNumCols: () => ({ type: "number", value: 8 }),
     state: fullyControlledState,
     onStateChange: (state) => {
       console.log("Test 5 - Selection changed:", state);
@@ -487,7 +513,7 @@ function Test5() {
         onClick={() =>
           setFullyControlledState({
             selections: [
-              { start: { row: 0, col: 0 }, end: { row: 7, col: 7 } },
+              { start: { row: 0, col: 0 }, end: { row: { type: "number", value: 7 }, col: { type: "number", value: 7 } } },
             ],
             hasFocus: false,
             isSelecting: { type: "none" },
@@ -503,7 +529,7 @@ function Test5() {
         onClick={() =>
           setFullyControlledState({
             selections: [
-              { start: { row: 2, col: 2 }, end: { row: 5, col: 5 } },
+              { start: { row: 2, col: 2 }, end: { row: { type: "number", value: 5 }, col: { type: "number", value: 5 } } },
             ],
             hasFocus: false,
             isSelecting: { type: "none" },
@@ -703,8 +729,8 @@ function Test6() {
     null,
   );
   const selectionManager = useInitializeSelectionManager({
-    getNumRows: () => 8,
-    getNumCols: () => 8,
+    getNumRows: () => ({ type: "number", value: 8 }),
+    getNumCols: () => ({ type: "number", value: 8 }),
     containerElement,
   });
 

@@ -3,14 +3,15 @@ import {
   SelectionManager,
   type SelectionManagerState,
   type SMArea,
+  type MaybeInfNumber,
 } from "./selection-manager";
 
 const useIsomorphicLayoutEffect =
   typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export function useInitializeSelectionManager(props: {
-  getNumRows?: () => number;
-  getNumCols?: () => number;
+  getNumRows?: () => MaybeInfNumber;
+  getNumCols?: () => MaybeInfNumber;
   initialState?: Partial<SelectionManagerState>;
   state?: SelectionManagerState;
   onStateChange?: (state: SelectionManagerState) => void;
@@ -20,8 +21,8 @@ export function useInitializeSelectionManager(props: {
   const onStateChangeRef = useRef(props.onStateChange);
   const [selectionManager] = useState<SelectionManager>(() => {
     const selectionManager = new SelectionManager(
-      props.getNumRows ?? (() => Infinity),
-      props.getNumCols ?? (() => Infinity),
+      props.getNumRows ?? (() => ({ type: "infinity" })),
+      props.getNumCols ?? (() => ({ type: "infinity" })),
       props.getGroups ?? (() => []),
     );
     selectionManager.setState(props.state ?? props.initialState ?? {});
