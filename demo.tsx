@@ -153,6 +153,10 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
       });
       const boxShadow = selectionManager.getCellBoxShadow({ row, col });
       const isEditing = selectionManager.isEditingCell(row, col);
+      const canHaveFillHandle = selectionManager.canCellHaveFillHandle({
+        row,
+        col,
+      });
 
       const value = values[`${row},${col}`] ?? `${row},${col}`;
 
@@ -175,8 +179,19 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
             alignItems: "center",
             justifyContent: "center",
             fontSize: "12px",
+            position: "relative",
           }}
-          onMouseDown={(e) => selectionManager.cellMouseDown(row, col, e)}
+          onMouseDown={(e) =>
+            selectionManager.cellMouseDown(row, col, {
+              shiftKey: e.shiftKey,
+              ctrlKey: e.ctrlKey,
+              metaKey: e.metaKey,
+              isFillHandle:
+                e.target instanceof HTMLElement &&
+                (e.target.hasAttribute("data-fill-handle") ||
+                  e.target.querySelector("[data-fill-handle]") !== null),
+            })
+          }
           onMouseEnter={() => selectionManager.cellMouseEnter(row, col)}
           onDoubleClick={(e) => selectionManager.cellDoubleClick(row, col)}
         >
@@ -207,6 +222,20 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
             />
           ) : (
             value
+          )}
+          {canHaveFillHandle && (
+            <div
+              data-fill-handle={true}
+              style={{
+                position: "absolute",
+                bottom: 0,
+                right: 0,
+                width: 8,
+                height: 8,
+                backgroundColor: "blue",
+                cursor: "crosshair",
+              }}
+            ></div>
           )}
         </div>
       );
@@ -532,6 +561,10 @@ const CellComponent = React.memo(
       return selectionManager.isEditingCell(row, col);
     });
 
+    const canHaveFillHandle = useSelectionManager(selectionManager, () => {
+      return selectionManager.canCellHaveFillHandle({ row, col });
+    });
+
     const [value, setValue] = useState<string>(`${row},${col}`);
 
     return (
@@ -548,6 +581,7 @@ const CellComponent = React.memo(
           alignItems: "center",
           justifyContent: "center",
           fontSize: "12px",
+          position: "relative",
         }}
       >
         {isEditing ? (
@@ -571,6 +605,20 @@ const CellComponent = React.memo(
           />
         ) : (
           value
+        )}
+        {canHaveFillHandle && (
+          <div
+            data-fill-handle={true}
+            style={{
+              position: "absolute",
+              bottom: 0,
+              right: 0,
+              width: 8,
+              height: 8,
+              backgroundColor: "blue",
+              cursor: "crosshair",
+            }}
+          ></div>
         )}
       </div>
     );
@@ -659,6 +707,12 @@ function Test6() {
     getNumCols: () => 8,
     containerElement,
   });
+
+  React.useEffect(() => {
+    return selectionManager.listenToFill((from, to) => {
+      console.log("fillArea", { from, to });
+    });
+  }, [selectionManager]);
 
   const renderGridContent = () => {
     const content = [];

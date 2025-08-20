@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.7
+
+### Patch Changes
+
+- add fill handle support and fix a csv parser issue
+
 ## 0.0.6
 
 ### Patch Changes

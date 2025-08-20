@@ -1,47 +1,129 @@
 import { describe, test, expect } from "bun:test";
-import { parseCSVContent, parseCSVLine } from "../src/utils";
+import { parseCSVLine, parseCSVContent } from "../src/utils";
 
-describe("parseCSVLine", () => {
-  test("should parse basic CSV line", () => {
-    const result = parseCSVLine("a,b,c");
-    expect(result).toEqual(["a", "b", "c"]);
+describe("CSV/TSV parsing", () => {
+  describe("parseCSVLine", () => {
+    test("should parse basic CSV values", () => {
+      const result = parseCSVLine("value1,value2,value3");
+      expect(result).toEqual(["value1", "value2", "value3"]);
+    });
+
+    test("should parse basic TSV values", () => {
+      const result = parseCSVLine("value1\tvalue2\tvalue3");
+      expect(result).toEqual(["value1", "value2", "value3"]);
+    });
+
+    test("should handle quoted values with commas", () => {
+      const result = parseCSVLine('value1,"value,with,commas",value3');
+      expect(result).toEqual(["value1", "value,with,commas", "value3"]);
+    });
+
+    test("should handle quoted values with tabs", () => {
+      const result = parseCSVLine('value1\t"value\twith\ttabs"\tvalue3');
+      expect(result).toEqual(["value1", "value\twith\ttabs", "value3"]);
+    });
+
+    test("should handle escaped quotes", () => {
+      const result = parseCSVLine('value1,"value ""quoted"" text",value3');
+      expect(result).toEqual(["value1", 'value "quoted" text', "value3"]);
+    });
+
+    test("should handle Excel formulas with quoted commas - reproducing the bug", () => {
+      const input = 'bla\t=LEFT([@bla],FIND(",",[@bla])-1)\t=[@[bla]]\t=[@[bla]]\tbla';
+      const result = parseCSVLine(input);
+      // This should preserve the comma in quotes within the formula
+      expect(result).toEqual([
+        "bla",
+        '=LEFT([@bla],FIND(",",[@bla])-1)',
+        "=[@[bla]]",
+        "=[@[bla]]",
+        "bla"
+      ]);
+    });
+
+    test("should handle mixed quoted and unquoted values", () => {
+      const result = parseCSVLine('unquoted,"quoted,value",another');
+      expect(result).toEqual(["unquoted", "quoted,value", "another"]);
+    });
+
+    test("should handle empty values", () => {
+      const result = parseCSVLine("value1,,value3");
+      expect(result).toEqual(["value1", "", "value3"]);
+    });
+
+    test("should handle quoted empty values", () => {
+      const result = parseCSVLine('value1,"",value3');
+      expect(result).toEqual(["value1", "", "value3"]);
+    });
+
+    test("should handle complex Excel formula with multiple quote pairs", () => {
+      const input = 'data\t=IF([@A]>0,CONCATENATE("Value: ",[@A]),"")\tother';
+      const result = parseCSVLine(input);
+      expect(result).toEqual([
+        "data",
+        '=IF([@A]>0,CONCATENATE("Value: ",[@A]),"")',
+        "other"
+      ]);
+    });
+
+    test("should handle nested quotes in CSV", () => {
+      const result = parseCSVLine('value1,"outer ""inner"" quotes",value3');
+      expect(result).toEqual(["value1", 'outer "inner" quotes', "value3"]);
+    });
+
+    test("should auto-detect delimiter correctly", () => {
+      // CSV format
+      const csvResult = parseCSVLine('a,b,c');
+      expect(csvResult).toEqual(["a", "b", "c"]);
+      
+      // TSV format
+      const tsvResult = parseCSVLine('a\tb\tc');
+      expect(tsvResult).toEqual(["a", "b", "c"]);
+    });
   });
 
-  test("should parse basic TSV line", () => {
-    const result = parseCSVLine("a\tb\tc");
-    expect(result).toEqual(["a", "b", "c"]);
-  });
+  describe("parseCSVContent", () => {
+    test("should parse the TSV content from the bug report", () => {
+      const input = `bla1\tbla2\tbla3\tbla4\tbla5\tbla6
+bla\t=LEFT([@bla],FIND(",",[@bla])-1)\t=[@[bla]]\t=[@[bla]]\tbla`;
+      
+      const result = parseCSVContent(input);
+      expect(result).toEqual([
+        { rowIndex: 0, colIndex: 0, value: "bla1" },
+        { rowIndex: 0, colIndex: 1, value: "bla2" },
+        { rowIndex: 0, colIndex: 2, value: "bla3" },
+        { rowIndex: 0, colIndex: 3, value: "bla4" },
+        { rowIndex: 0, colIndex: 4, value: "bla5" },
+        { rowIndex: 0, colIndex: 5, value: "bla6" },
+        { rowIndex: 1, colIndex: 0, value: "bla" },
+        { rowIndex: 1, colIndex: 1, value: '=LEFT([@bla],FIND(",",[@bla])-1)' },
+        { rowIndex: 1, colIndex: 2, value: "=[@[bla]]" },
+        { rowIndex: 1, colIndex: 3, value: "=[@[bla]]" },
+        { rowIndex: 1, colIndex: 4, value: "bla" }
+      ]);
+    });
 
-  test("should prefer tabs over commas when both are present", () => {
-    const result = parseCSVLine("0,0\t0,1\t0,2");
-    expect(result).toEqual(["0,0", "0,1", "0,2"]);
-  });
+    test("should handle numbers with commas correctly", () => {
+      const input = "1,234\n5,678.90\n12,345";
+      const result = parseCSVContent(input);
+      expect(result).toEqual([
+        { rowIndex: 0, colIndex: 0, value: "1,234" },
+        { rowIndex: 1, colIndex: 0, value: "5,678.90" },
+        { rowIndex: 2, colIndex: 0, value: "12,345" }
+      ]);
+    });
 
-  test("should handle quoted values with commas in CSV", () => {
-    const result = parseCSVLine('"hello, world",test');
-    expect(result).toEqual(["hello, world", "test"]);
-  });
-
-  test("should handle quoted values with tabs in CSV", () => {
-    // When tabs are present, the parser uses tab as delimiter
-    // The quotes are still processed, so they get removed
-    const result = parseCSVLine('"hello\tworld",test');
-    expect(result).toEqual(["hello\tworld,test"]);
-  });
-
-  test("should handle escaped quotes", () => {
-    const result = parseCSVLine('"say ""hello""",test');
-    expect(result).toEqual(['say "hello"', "test"]);
-  });
-
-  test("should handle empty cells", () => {
-    const result = parseCSVLine("a,,c");
-    expect(result).toEqual(["a", "", "c"]);
-  });
-
-  test("should handle empty cells with tabs", () => {
-    const result = parseCSVLine("a\t\tc");
-    expect(result).toEqual(["a", "", "c"]);
+    test("should handle regular CSV when not all numbers", () => {
+      const input = "name,value\ntest,1,234";
+      const result = parseCSVContent(input);
+      expect(result).toEqual([
+        { rowIndex: 0, colIndex: 0, value: "name" },
+        { rowIndex: 0, colIndex: 1, value: "value" },
+        { rowIndex: 1, colIndex: 0, value: "test" },
+        { rowIndex: 1, colIndex: 1, value: "1" },
+        { rowIndex: 1, colIndex: 2, value: "234" }
+      ]);
+    });
   });
 });
 

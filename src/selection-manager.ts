@@ -22,7 +22,7 @@ export type IsSelecting =
       type: "none";
     }
   | (SMArea & {
-      type: "drag" | "add" | "remove" | "shift";
+      type: "drag" | "add" | "remove" | "shift" | "fill";
     });
 
 export type IsEditing =
@@ -149,11 +149,34 @@ export class SelectionManager {
   cellMouseDown(
     row: number,
     col: number,
-    keys: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
+    keys: {
+      shiftKey: boolean;
+      ctrlKey: boolean;
+      metaKey: boolean;
+      isFillHandle: boolean;
+    },
   ) {
     const cmdKey = keys.metaKey || keys.ctrlKey;
     this.willMaybeUpdate();
     const lastSelection = this.selections[this.selections.length - 1];
+    if (keys.isFillHandle) {
+      const end = this.getFillHandleSelectionEnd(
+        { row, col },
+        {
+          row,
+          col,
+        },
+      );
+      if (end) {
+        this.isSelecting = {
+          start: { row, col },
+          end,
+          type: "fill",
+        };
+        this.onUpdate();
+        return;
+      }
+    }
     if (keys.shiftKey && lastSelection) {
       this.selections.splice(this.selections.length - 1, 1);
       this.isSelecting = { ...lastSelection, type: "shift" };
@@ -212,10 +235,50 @@ export class SelectionManager {
     return this.getGroups().find((group) => this.cellInSelection(cell, group));
   }
 
+  getFillHandleSelectionEnd(
+    start: { row: number; col: number },
+    currentCell: { row: number; col: number },
+  ) {
+    const baseSelection = this.getFillHandleBaseSelection();
+    if (!baseSelection) {
+      return;
+    }
+    const rowDiff = Math.abs(currentCell.row - start.row);
+    const colDiff = Math.abs(currentCell.col - start.col);
+    const minCol = Math.min(baseSelection.start.col, baseSelection.end.col);
+    const minRow = Math.min(baseSelection.start.row, baseSelection.end.row);
+    if (colDiff >= rowDiff) {
+      return {
+        row: minRow,
+        col: currentCell.col,
+      };
+    } else {
+      return {
+        row: currentCell.row,
+        col: minCol,
+      };
+    }
+  }
+
   cellMouseEnter(row: number, col: number) {
     this.willMaybeUpdate();
     if (this.isSelecting.type !== "none") {
-      this.isSelecting.end = { row, col };
+      if (this.isSelecting.type === "fill") {
+        const fillHandleEnd = this.getFillHandleSelectionEnd(
+          this.isSelecting.start,
+          {
+            row,
+            col,
+          },
+        );
+        if (fillHandleEnd) {
+          this.isSelecting.end = fillHandleEnd;
+        } else {
+          this.isSelecting.end = { row, col };
+        }
+      } else {
+        this.isSelecting.end = { row, col };
+      }
     }
     const group = this.findGroupContainingCell({ row, col });
     if (group) {
@@ -257,6 +320,27 @@ export class SelectionManager {
       this.isEditing.row === row &&
       this.isEditing.col === col
     );
+  }
+
+  canCellHaveFillHandle(cell: { row: number; col: number }) {
+    if (!this.isSelected(cell)) {
+      return false;
+    }
+
+    const baseSelection = this.getFillHandleBaseSelection();
+    if (!baseSelection) {
+      return false;
+    }
+
+    const bottomRight = this.bottomRightOfSelection(baseSelection);
+    return bottomRight.row === cell.row && bottomRight.col === cell.col;
+  }
+
+  bottomRightOfSelection(selection: SMArea) {
+    return {
+      row: Math.max(selection.start.row, selection.end.row),
+      col: Math.max(selection.start.col, selection.end.col),
+    };
   }
 
   headerMouseDown(
@@ -666,6 +750,155 @@ export class SelectionManager {
     );
   }
 
+  getFillHandleBaseSelection(): SMArea | undefined {
+    if (this.selections.length === 0) {
+      return undefined;
+    }
+
+    // Bounding rectangle that would be the candidate rectangular union
+    const bounding = this.getSelectionsBoundingRect();
+    if (!bounding) {
+      return undefined;
+    }
+
+    // Normalize selections similar to isAllSelected/getNonOverlappingSelections
+    // so Infinity ends are mapped to table bounds (which can themselves be Infinity)
+    const numRows = this.getNumRows();
+    const numCols = this.getNumCols();
+
+    type Normalized = {
+      startRow: number;
+      endRow: number;
+      startCol: number;
+      endCol: number;
+    };
+
+    const normalizedSelections: Normalized[] = this.selections.map(
+      (selection) => {
+        const startRow = Math.min(selection.start.row, selection.end.row);
+        const endRow = Math.max(selection.start.row, selection.end.row);
+        const startCol = Math.min(selection.start.col, selection.end.col);
+        const endCol = Math.max(selection.start.col, selection.end.col);
+
+        return {
+          startRow,
+          endRow:
+            endRow === Infinity
+              ? numRows === Infinity
+                ? Infinity
+                : numRows - 1
+              : endRow,
+          startCol,
+          endCol:
+            endCol === Infinity
+              ? numCols === Infinity
+                ? Infinity
+                : numCols - 1
+              : endCol,
+        };
+      },
+    );
+
+    // Quick accept: if any single normalized selection already equals the bounding rectangle
+    const boundingStartRow = Math.min(bounding.start.row, bounding.end.row);
+    const boundingEndRow = Math.max(bounding.start.row, bounding.end.row);
+    const boundingStartCol = Math.min(bounding.start.col, bounding.end.col);
+    const boundingEndCol = Math.max(bounding.start.col, bounding.end.col);
+
+    for (const sel of normalizedSelections) {
+      if (
+        sel.startRow === boundingStartRow &&
+        sel.endRow === boundingEndRow &&
+        sel.startCol === boundingStartCol &&
+        sel.endCol === boundingEndCol
+      ) {
+        return {
+          start: { row: boundingStartRow, col: boundingStartCol },
+          end: { row: boundingEndRow, col: boundingEndCol },
+        };
+      }
+    }
+
+    // Coordinate compression within the bounding rectangle.
+    const rowBoundaries = new Set<number>();
+    const colBoundaries = new Set<number>();
+
+    // Always include bounding rectangle limits (using +1 exclusive boundary)
+    rowBoundaries.add(boundingStartRow);
+    rowBoundaries.add(
+      boundingEndRow === Infinity ? Infinity : boundingEndRow + 1,
+    );
+    colBoundaries.add(boundingStartCol);
+    colBoundaries.add(
+      boundingEndCol === Infinity ? Infinity : boundingEndCol + 1,
+    );
+
+    // Include every selection edge
+    normalizedSelections.forEach((sel) => {
+      rowBoundaries.add(sel.startRow);
+      rowBoundaries.add(sel.endRow === Infinity ? Infinity : sel.endRow + 1);
+      colBoundaries.add(sel.startCol);
+      colBoundaries.add(sel.endCol === Infinity ? Infinity : sel.endCol + 1);
+    });
+
+    const sortedRows = Array.from(rowBoundaries).sort((a, b) => a - b);
+    const sortedCols = Array.from(colBoundaries).sort((a, b) => a - b);
+
+    // For every region fully inside the bounding rectangle, ensure it is covered
+    for (let i = 0; i < sortedRows.length - 1; i++) {
+      const regionStartRow = sortedRows[i]!;
+      const regionEndRow = sortedRows[i + 1]! - 1; // inclusive end
+
+      // Skip regions outside the bounding rectangle vertically
+      if (regionEndRow < boundingStartRow) continue;
+      if (boundingEndRow !== Infinity && regionStartRow > boundingEndRow)
+        continue;
+
+      for (let j = 0; j < sortedCols.length - 1; j++) {
+        const regionStartCol = sortedCols[j]!;
+        const regionEndCol = sortedCols[j + 1]! - 1; // inclusive end
+
+        // Skip regions outside the bounding rectangle horizontally
+        if (regionEndCol < boundingStartCol) continue;
+        if (boundingEndCol !== Infinity && regionStartCol > boundingEndCol)
+          continue;
+
+        // Clip region to bounding rectangle limits (important for Infinity ends)
+        const clippedEndRow =
+          boundingEndRow === Infinity
+            ? regionEndRow
+            : Math.min(regionEndRow, boundingEndRow);
+        const clippedEndCol =
+          boundingEndCol === Infinity
+            ? regionEndCol
+            : Math.min(regionEndCol, boundingEndCol);
+
+        const clippedStartRow = Math.max(regionStartRow, boundingStartRow);
+        const clippedStartCol = Math.max(regionStartCol, boundingStartCol);
+
+        // Ensure the clipped region is covered by at least one selection
+        const isCovered = normalizedSelections.some((sel) => {
+          return (
+            sel.startRow <= clippedStartRow &&
+            (sel.endRow === Infinity || sel.endRow >= clippedEndRow) &&
+            sel.startCol <= clippedStartCol &&
+            (sel.endCol === Infinity || sel.endCol >= clippedEndCol)
+          );
+        });
+
+        if (!isCovered) {
+          return undefined;
+        }
+      }
+    }
+
+    // All regions within bounding rectangle are covered → union is rectangular
+    return {
+      start: { row: boundingStartRow, col: boundingStartCol },
+      end: { row: boundingEndRow, col: boundingEndCol },
+    };
+  }
+
   currentSelectionBorders(cell: { row: number; col: number }): Border[] {
     const borders: Border[] = [];
     const selection = this.isSelecting;
@@ -713,6 +946,38 @@ export class SelectionManager {
     const currentSelectionBorders = this.currentSelectionBorders(cell);
 
     const selectionShadows: string[] = [];
+
+    currentSelectionBorders.forEach((border) => {
+      let color = "#c5b4b3";
+      if (this.isSelecting.type === "fill") {
+        color = "red";
+      }
+      switch (border) {
+        case "top":
+          if (
+            cell.row !== 0 ||
+            !this.currentSelectionCoversWholeIndex(cell.col, "col")
+          ) {
+            selectionShadows.push(`inset 0 2px 0 0 ${color}`);
+          }
+          break;
+        case "right":
+          selectionShadows.push(`inset -2px 0 0 0 ${color}`);
+          break;
+        case "bottom":
+          selectionShadows.push(`inset 0 -2px 0 0 ${color}`);
+          break;
+        case "left":
+          if (
+            cell.col !== 0 ||
+            !this.currentSelectionCoversWholeIndex(cell.row, "row")
+          ) {
+            selectionShadows.push(`inset 2px 0 0 0 ${color}`);
+          }
+          break;
+      }
+    });
+
     selectionBorders.forEach((border) => {
       switch (border) {
         case "top":
@@ -729,33 +994,6 @@ export class SelectionManager {
         case "left":
           if (cell.col !== 0 || !this.isWholeRowSelected(cell.row)) {
             selectionShadows.push(`inset 2px 0 0 0 #2196F3`);
-          }
-          break;
-      }
-    });
-
-    currentSelectionBorders.forEach((border) => {
-      switch (border) {
-        case "top":
-          if (
-            cell.row !== 0 ||
-            !this.currentSelectionCoversWholeIndex(cell.col, "col")
-          ) {
-            selectionShadows.push(`inset 0 2px 0 0 #c5b4b3`);
-          }
-          break;
-        case "right":
-          selectionShadows.push(`inset -2px 0 0 0 #c5b4b3`);
-          break;
-        case "bottom":
-          selectionShadows.push(`inset 0 -2px 0 0 #c5b4b3`);
-          break;
-        case "left":
-          if (
-            cell.col !== 0 ||
-            !this.currentSelectionCoversWholeIndex(cell.row, "row")
-          ) {
-            selectionShadows.push(`inset 2px 0 0 0 #c5b4b3`);
           }
           break;
       }
@@ -1504,11 +1742,13 @@ export class SelectionManager {
    *
    * @returns A list of cells in the area.
    */
-  public getCellsWithData(area: SMArea): { rowIndex: number; colIndex: number; }[] {
+  public getCellsWithData(
+    area: SMArea,
+  ): { rowIndex: number; colIndex: number }[] {
     if (area.end.row === Infinity || area.end.col === Infinity) {
       throw new Error("Cannot iterate over infinite selections");
     }
-    const cells: { rowIndex: number; colIndex: number; }[] = [];
+    const cells: { rowIndex: number; colIndex: number }[] = [];
     for (let row = area.start.row; row <= area.end.row; row++) {
       for (let col = area.start.col; col <= area.end.col; col++) {
         cells.push({ rowIndex: row, colIndex: col });
@@ -1599,6 +1839,21 @@ export class SelectionManager {
     return () => {
       this.listenToUpdateDataListeners =
         this.listenToUpdateDataListeners.filter((l) => l !== callback);
+    };
+  }
+
+  private listenToFillListeners: ((
+    expandFrom: SMArea,
+    fillArea: SMArea,
+  ) => void)[] = [];
+  listenToFill(
+    callback: (expandFrom: SMArea, fillArea: SMArea) => void,
+  ) {
+    this.listenToFillListeners.push(callback);
+    return () => {
+      this.listenToFillListeners = this.listenToFillListeners.filter(
+        (l) => l !== callback,
+      );
     };
   }
 
@@ -1727,10 +1982,18 @@ export class SelectionManager {
    */
   setupCellElement(el: HTMLElement, cell: { row: number; col: number }) {
     const onMouseDown = (e: MouseEvent) => {
+      const htmlEl = e.target as HTMLElement;
+      const fillHandleBaseSelection = this.getFillHandleBaseSelection();
+      const isFillHandle =
+        !!fillHandleBaseSelection &&
+        (htmlEl.hasAttribute("data-fill-handle") ||
+          htmlEl.querySelector("[data-fill-handle]") !== null);
+      console.log("isFillHandle", isFillHandle);
       this.cellMouseDown(cell.row, cell.col, {
         shiftKey: e.shiftKey,
         ctrlKey: e.ctrlKey,
         metaKey: e.metaKey,
+        isFillHandle,
       });
     };
     const onMouseEnter = (e: MouseEvent) => {
@@ -1913,10 +2176,34 @@ export class SelectionManager {
   mouseUp() {
     this.willMaybeUpdate();
     if (this.isSelecting.type !== "none") {
-      if (this.isSelecting.type === "remove") {
+      if (this.isSelecting.type === "fill") {
+        const fillHandleBaseSelection = this.getFillHandleBaseSelection();
+        if (fillHandleBaseSelection) {
+          const fillArea = this.isSelecting;
+          if (
+            this.cellInSelection(this.isSelecting.end, fillHandleBaseSelection)
+          ) {
+            this.deselectArea(this.isSelecting);
+            this.listenToFillListeners.forEach((listener) =>
+              listener(fillHandleBaseSelection, fillArea),
+            );
+          } else {
+            this.selections.push({
+              start: this.isSelecting.start,
+              end: this.isSelecting.end,
+            });
+            this.listenToFillListeners.forEach((listener) =>
+              listener(fillHandleBaseSelection, fillArea),
+            );
+          }
+        }
+      } else if (this.isSelecting.type === "remove") {
         this.deselectArea(this.isSelecting);
       } else {
-        this.selections.push(this.isSelecting);
+        this.selections.push({
+          start: this.isSelecting.start,
+          end: this.isSelecting.end,
+        });
       }
     }
     this.isSelecting = { type: "none" };

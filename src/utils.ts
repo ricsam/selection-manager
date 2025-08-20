@@ -6,34 +6,95 @@ export type CellData = {
 
 // CSV/TSV parsing utilities
 export const parseCSVLine = (line: string): string[] => {
-  // Auto-detect delimiter: prefer tabs over commas if tabs are present
-  const delimiter = line.includes("\t") ? "\t" : ",";
-
-  const result: string[] = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    const nextChar = line[i + 1];
-
-    if (char === '"') {
-      if (inQuotes && nextChar === '"') {
-        current += '"';
-        i++; // Skip next quote
-      } else {
-        inQuotes = !inQuotes;
+  // Auto-detect delimiter: if line contains tabs, use tab; otherwise use comma
+  const delimiter = line.includes('\t') ? '\t' : ',';
+  
+  // First, identify all quote-protected ranges
+  const protectedRanges: Array<{start: number, end: number}> = [];
+  let i = 0;
+  while (i < line.length) {
+    if (line[i] === '"') {
+      const start = i;
+      i++; // Skip opening quote
+      
+      // Find the closing quote
+      while (i < line.length) {
+        if (line[i] === '"') {
+          if (i + 1 < line.length && line[i + 1] === '"') {
+            // Escaped quote, skip both
+            i += 2;
+          } else {
+            // Found closing quote
+            protectedRanges.push({start, end: i});
+            i++;
+            break;
+          }
+        } else {
+          i++;
+        }
       }
-    } else if (char === delimiter && !inQuotes) {
-      result.push(current);
-      current = "";
     } else {
-      current += char;
+      i++;
     }
   }
 
-  result.push(current);
+  // Now split on delimiters, but skip any that are in protected ranges
+  const result: string[] = [];
+  let fieldStart = 0;
+  
+  for (let pos = 0; pos < line.length; pos++) {
+    const char = line[pos];
+    
+    if (char === delimiter) {
+      // Check if this delimiter is protected
+      const isProtected = protectedRanges.some(range => 
+        pos > range.start && pos < range.end
+      );
+      
+      if (!isProtected) {
+        // This is a real delimiter
+        const field = line.substring(fieldStart, pos);
+        result.push(processCSVField(field));
+        fieldStart = pos + 1;
+      }
+    }
+  }
+  
+  // Add the last field
+  const lastField = line.substring(fieldStart);
+  result.push(processCSVField(lastField));
+  
   return result;
+};
+
+// Helper function to process individual CSV fields
+const processCSVField = (field: string): string => {
+  // If field is entirely surrounded by quotes, remove them and handle escapes
+  if (field.length >= 2 && field[0] === '"' && field[field.length - 1] === '"') {
+    // Check if this looks like a properly quoted CSV field by ensuring all quotes are properly escaped
+    let hasUnpairedQuotes = false;
+    
+    for (let i = 1; i < field.length - 1; i++) {
+      if (field[i] === '"') {
+        if (i + 1 < field.length - 1 && field[i + 1] === '"') {
+          // Escaped quote, skip both
+          i++;
+        } else {
+          // Unpaired quote in the middle
+          hasUnpairedQuotes = true;
+          break;
+        }
+      }
+    }
+    
+    if (!hasUnpairedQuotes) {
+      // Remove outer quotes and unescape inner quotes
+      return field.slice(1, -1).replace(/""/g, '"');
+    }
+  }
+  
+  // Return field as-is (may contain quotes in the middle)
+  return field;
 };
 
 // Parse comma-separated formatted numbers intelligently
