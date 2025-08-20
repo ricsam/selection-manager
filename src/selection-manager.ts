@@ -1033,18 +1033,16 @@ export class SelectionManager {
       const regionStartRow: MaybeInfNumber =
         typeof startRow === "number"
           ? { type: "number", value: startRow }
-          : { type: "infinity" }
+          : { type: "infinity" };
 
       const endRow = sortedRows[i + 1]!;
       const regionEndRow: MaybeInfNumber =
         typeof endRow === "number"
           ? { type: "number", value: endRow - 1 }
-          : { type: "infinity" }
+          : { type: "infinity" };
 
       // Skip regions outside the bounding rectangle vertically
-      if (
-        this.lt(regionEndRow, { type: "number", value: boundingStartRow })
-      ) {
+      if (this.lt(regionEndRow, { type: "number", value: boundingStartRow })) {
         continue;
       }
 
@@ -1062,11 +1060,11 @@ export class SelectionManager {
         const regionStartCol: MaybeInfNumber =
           typeof startCol === "number"
             ? { type: "number", value: startCol }
-            : { type: "infinity" }
+            : { type: "infinity" };
         const regionEndCol: MaybeInfNumber =
           typeof endCol === "number"
             ? { type: "number", value: endCol - 1 }
-            : { type: "infinity" }
+            : { type: "infinity" };
 
         // Skip regions outside the bounding rectangle horizontally
         if (
@@ -1110,12 +1108,14 @@ export class SelectionManager {
               { type: "number", value: sel.startRow },
               clippedStartRow,
             ) &&
-            (sel.endRow.type === "infinity" || this.gte(sel.endRow, clippedEndRow)) &&
+            (sel.endRow.type === "infinity" ||
+              this.gte(sel.endRow, clippedEndRow)) &&
             this.lte(
               { type: "number", value: sel.startCol },
               clippedStartCol,
             ) &&
-            (sel.endCol.type === "infinity" || this.gte(sel.endCol, clippedEndCol))
+            (sel.endCol.type === "infinity" ||
+              this.gte(sel.endCol, clippedEndCol))
           );
         });
 
@@ -1287,14 +1287,21 @@ export class SelectionManager {
       const endCol = this.max(selection.start.col, selection.end.col);
 
       // Apply the same logic as cellInSelection for handling infinity
-      const normalizedEndRow = this.normalizeEndBound(endRow, this.getNumRows());
-      const normalizedEndCol = this.normalizeEndBound(endCol, this.getNumCols());
+      const normalizedEndRow = this.normalizeEndBound(
+        endRow,
+        this.getNumRows(),
+      );
+      const normalizedEndCol = this.normalizeEndBound(
+        endCol,
+        this.getNumCols(),
+      );
 
       if (type === "row") {
         // Check if this selection covers the row
         if (
           startRow <= index &&
-          (normalizedEndRow.type === "infinity" || index <= normalizedEndRow.value)
+          (normalizedEndRow.type === "infinity" ||
+            index <= normalizedEndRow.value)
         ) {
           intervals.push({ start: startCol, end: normalizedEndCol });
         }
@@ -1302,7 +1309,8 @@ export class SelectionManager {
         // Check if this selection covers the column
         if (
           startCol <= index &&
-          (normalizedEndCol.type === "infinity" || index <= normalizedEndCol.value)
+          (normalizedEndCol.type === "infinity" ||
+            index <= normalizedEndCol.value)
         ) {
           intervals.push({ start: startRow, end: normalizedEndRow });
         }
@@ -1362,10 +1370,7 @@ export class SelectionManager {
         type: "number",
         value: maxValue.value - 1,
       };
-      return (
-        interval.start === 0 &&
-        this.gte(interval.end, maxValueMinusOne)
-      );
+      return interval.start === 0 && this.gte(interval.end, maxValueMinusOne);
     }
   }
 
@@ -1403,13 +1408,15 @@ export class SelectionManager {
       // Check if the current selection intersects with this row
       return (
         startRow <= index &&
-        (normalizedEndRow.type === "infinity" || index <= normalizedEndRow.value)
+        (normalizedEndRow.type === "infinity" ||
+          index <= normalizedEndRow.value)
       );
     } else {
       // Check if the current selection intersects with this column
       return (
         startCol <= index &&
-        (normalizedEndCol.type === "infinity" || index <= normalizedEndCol.value)
+        (normalizedEndCol.type === "infinity" ||
+          index <= normalizedEndCol.value)
       );
     }
   }
@@ -1577,8 +1584,14 @@ export class SelectionManager {
       const endCol = this.max(selection.start.col, selection.end.col);
 
       // Handle infinite selections by normalizing to actual table bounds
-      const normalizedEndRow = this.normalizeEndBound(endRow, this.getNumRows());
-      const normalizedEndCol = this.normalizeEndBound(endCol, this.getNumCols());
+      const normalizedEndRow = this.normalizeEndBound(
+        endRow,
+        this.getNumRows(),
+      );
+      const normalizedEndCol = this.normalizeEndBound(
+        endCol,
+        this.getNumCols(),
+      );
 
       minRow = Math.min(startRow, minRow);
       maxRow = this.maxMaybeInf(normalizedEndRow, maxRow);
@@ -1652,19 +1665,19 @@ export class SelectionManager {
         const regionStartRow: MaybeInfNumber =
           typeof startRow === "number"
             ? { type: "number", value: startRow }
-            : { type: "infinity" }
+            : { type: "infinity" };
         const regionEndRow: MaybeInfNumber =
           typeof endRow === "number"
             ? { type: "number", value: endRow - 1 }
-            : { type: "infinity" }
+            : { type: "infinity" };
         const regionStartCol: MaybeInfNumber =
           typeof startCol === "number"
             ? { type: "number", value: startCol }
-            : { type: "infinity" }
+            : { type: "infinity" };
         const regionEndCol: MaybeInfNumber =
           typeof endCol === "number"
             ? { type: "number", value: endCol - 1 }
-            : { type: "infinity" }
+            : { type: "infinity" };
 
         // Check if any original selection covers this region
         const isCovered = normalizedSelections.some((sel) => {
@@ -1808,37 +1821,29 @@ export class SelectionManager {
       }
       if (event.key === "ArrowDown") {
         const numRows = this.getNumRows();
-        const maxRow =
-          numRows.type === "infinity" ? Infinity : numRows.value - 1;
-        if (
-          this.lt(lastSelection.end.row, {
-            type: "number",
-            value: maxRow,
-          })
-        ) {
-          lastSelection.end.row = { type: "number", value: maxRow };
+        const maxRow: MaybeInfNumber =
+          numRows.type === "infinity"
+            ? { type: "infinity" }
+            : { type: "number", value: numRows.value - 1 };
+        if (this.lt(lastSelection.end.row, maxRow)) {
+          lastSelection.end.row = maxRow;
           shouldUpdate = true;
         }
       }
       if (event.key === "ArrowLeft") {
-        if (
-          this.gt(lastSelection.end.col, { type: "number", value: 0 })
-        ) {
+        if (this.gt(lastSelection.end.col, { type: "number", value: 0 })) {
           lastSelection.end.col = { type: "number", value: 0 };
           shouldUpdate = true;
         }
       }
       if (event.key === "ArrowRight") {
         const numCols = this.getNumCols();
-        const maxCol =
-          numCols.type === "infinity" ? Infinity : numCols.value - 1;
-        if (
-          this.lt(lastSelection.end.col, {
-            type: "number",
-            value: maxCol,
-          })
-        ) {
-          lastSelection.end.col = { type: "number", value: maxCol };
+        const maxCol: MaybeInfNumber =
+          numCols.type === "infinity"
+            ? { type: "infinity" }
+            : { type: "number", value: numCols.value - 1 };
+        if (this.lt(lastSelection.end.col, maxCol)) {
+          lastSelection.end.col = maxCol;
           shouldUpdate = true;
         }
       }
@@ -1860,14 +1865,18 @@ export class SelectionManager {
           (s) =>
             s.start.row === 0 &&
             s.start.col === 0 &&
-            this.equals(s.end.row, {
-              type: "number",
-              value: numRows.type === "infinity" ? Infinity : numRows.value - 1,
-            }) &&
-            this.equals(s.end.col, {
-              type: "number",
-              value: numCols.type === "infinity" ? Infinity : numCols.value - 1,
-            }),
+            this.equals(
+              s.end.row,
+              numRows.type === "infinity"
+                ? { type: "infinity" }
+                : { type: "number", value: numRows.value - 1 },
+            ) &&
+            this.equals(
+              s.end.col,
+              numCols.type === "infinity"
+                ? { type: "infinity" }
+                : { type: "number", value: numCols.value - 1 },
+            ),
         )
       ) {
         return;
@@ -1933,10 +1942,7 @@ export class SelectionManager {
         }
       } else if (
         event.key === "ArrowDown" &&
-        this.lt(newRow, {
-          type: "number",
-          value: numRows.type === "infinity" ? Infinity : numRows.value - 1,
-        })
+        this.lt(newRow, numRows.type === "infinity" ? { type: "infinity" } : { type: "number", value: numRows.value - 1 })
       ) {
         if (newRow.type === "number") {
           newRow = { type: "number", value: newRow.value + 1 };
@@ -1954,10 +1960,7 @@ export class SelectionManager {
         }
       } else if (
         event.key === "ArrowRight" &&
-        this.lt(newCol, {
-          type: "number",
-          value: numCols.type === "infinity" ? Infinity : numCols.value - 1,
-        })
+        this.lt(newCol, numCols.type === "infinity" ? { type: "infinity" } : { type: "number", value: numCols.value - 1 })
       ) {
         if (newCol.type === "number") {
           newCol = { type: "number", value: newCol.value + 1 };
@@ -2270,7 +2273,8 @@ export class SelectionManager {
       if (
         !(
           startRow <= index &&
-          (normalizedEndRow.type === "infinity" || index <= normalizedEndRow.value)
+          (normalizedEndRow.type === "infinity" ||
+            index <= normalizedEndRow.value)
         )
       ) {
         return false;
@@ -2282,7 +2286,10 @@ export class SelectionManager {
       } else {
         return (
           startCol === 0 &&
-          this.gte(normalizedEndCol, { type: "number", value: numCols.value - 1 })
+          this.gte(normalizedEndCol, {
+            type: "number",
+            value: numCols.value - 1,
+          })
         );
       }
     } else {
@@ -2290,7 +2297,8 @@ export class SelectionManager {
       if (
         !(
           startCol <= index &&
-          (normalizedEndCol.type === "infinity" || index <= normalizedEndCol.value)
+          (normalizedEndCol.type === "infinity" ||
+            index <= normalizedEndCol.value)
         )
       ) {
         return false;
@@ -2302,7 +2310,10 @@ export class SelectionManager {
       } else {
         return (
           startRow === 0 &&
-          this.gte(normalizedEndRow, { type: "number", value: numRows.value - 1 })
+          this.gte(normalizedEndRow, {
+            type: "number",
+            value: numRows.value - 1,
+          })
         );
       }
     }
@@ -2466,18 +2477,12 @@ export class SelectionManager {
       // Check bounds if limits are specified
       if (
         this.getNumRows() &&
-        this.gt(
-          { type: "number", value: targetRow },
-          this.getNumRows(),
-        )
+        this.gt({ type: "number", value: targetRow }, this.getNumRows())
       )
         return;
       if (
         this.getNumCols() &&
-        this.gt(
-          { type: "number", value: targetCol },
-          this.getNumCols(),
-        )
+        this.gt({ type: "number", value: targetCol }, this.getNumCols())
       )
         return;
 

@@ -6,8 +6,8 @@ describe("SelectionManager Advanced Tests", () => {
 
   beforeEach(() => {
     selectionManager = new SelectionManager(
-      () => ({ type: "number", value: 10 }),
-      () => ({ type: "number", value: 5 }),
+      () => ({ type: "number" as const, value: 10 }),
+      () => ({ type: "number" as const, value: 5 }),
       () => [],
     );
   });
@@ -161,8 +161,8 @@ describe("SelectionManager Advanced Tests", () => {
 
     it("should throw error for infinite selection iteration", () => {
       const infiniteManager = new SelectionManager(
-        () => ({ type: "infinity" }),
-        () => ({ type: "infinity" }),
+        () => ({ type: "infinity" as const }),
+        () => ({ type: "infinity" as const }),
         () => [],
       );
 
@@ -265,8 +265,8 @@ describe("SelectionManager Advanced Tests", () => {
     it("should test sort function with various combinations", () => {
       // Create manager that will use coordinate compression
       const manager = new SelectionManager(
-        () => ({ type: "infinity" }),
-        () => ({ type: "infinity" }),
+        () => ({ type: "infinity" as const }),
+        () => ({ type: "infinity" as const }),
         () => [],
       );
 
@@ -380,8 +380,8 @@ describe("SelectionManager Advanced Tests", () => {
 
       const normalized = selectionManager.normalizeSelection(infiniteSelection);
       
-      expect(normalized.end.row).toEqual({ type: "number", value: 9 }); // numRows - 1
-      expect(normalized.end.col).toEqual({ type: "number", value: 4 }); // numCols - 1
+      expect(normalized.end.row).toEqual({ type: "number" as const, value: 9 }); // numRows - 1
+      expect(normalized.end.col).toEqual({ type: "number" as const, value: 4 }); // numCols - 1
     });
 
     it("should handle paste and drop operations", () => {
@@ -449,64 +449,64 @@ describe("SelectionManager Advanced Tests", () => {
   describe("Comparison Methods", () => {
     it("should test equals method", () => {
       expect(selectionManager.equals(
-        { type: "number", value: 5 },
-        { type: "number", value: 5 }
+        { type: "number" as const, value: 5 },
+        { type: "number" as const, value: 5 }
       )).toBe(true);
 
       expect(selectionManager.equals(
-        { type: "infinity" },
-        { type: "infinity" }
+        { type: "infinity" as const },
+        { type: "infinity" as const }
       )).toBe(true);
 
       expect(selectionManager.equals(
-        { type: "number", value: 5 },
-        { type: "infinity" }
+        { type: "number" as const, value: 5 },
+        { type: "infinity" as const }
       )).toBe(false);
     });
 
     it("should test lt method", () => {
       expect(selectionManager.lt(
-        { type: "number", value: 3 },
-        { type: "number", value: 5 }
+        { type: "number" as const, value: 3 },
+        { type: "number" as const, value: 5 }
       )).toBe(true);
 
       expect(selectionManager.lt(
-        { type: "number", value: 5 },
-        { type: "infinity" }
+        { type: "number" as const, value: 5 },
+        { type: "infinity" as const }
       )).toBe(true);
 
       expect(selectionManager.lt(
-        { type: "infinity" },
-        { type: "number", value: 5 }
+        { type: "infinity" as const },
+        { type: "number" as const, value: 5 }
       )).toBe(false);
     });
 
     it("should test gt method", () => {
       expect(selectionManager.gt(
-        { type: "number", value: 5 },
-        { type: "number", value: 3 }
+        { type: "number" as const, value: 5 },
+        { type: "number" as const, value: 3 }
       )).toBe(true);
 
       expect(selectionManager.gt(
-        { type: "infinity" },
-        { type: "number", value: 5 }
+        { type: "infinity" as const },
+        { type: "number" as const, value: 5 }
       )).toBe(true);
 
       expect(selectionManager.gt(
-        { type: "number", value: 3 },
-        { type: "infinity" }
+        { type: "number" as const, value: 3 },
+        { type: "infinity" as const }
       )).toBe(false);
     });
 
     it("should test lte and gte methods", () => {
       expect(selectionManager.lte(
-        { type: "number", value: 3 },
-        { type: "number", value: 3 }
+        { type: "number" as const, value: 3 },
+        { type: "number" as const, value: 3 }
       )).toBe(true);
 
       expect(selectionManager.gte(
-        { type: "number", value: 5 },
-        { type: "number", value: 5 }
+        { type: "number" as const, value: 5 },
+        { type: "number" as const, value: 5 }
       )).toBe(true);
     });
   });

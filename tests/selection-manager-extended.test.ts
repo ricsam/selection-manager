@@ -6,8 +6,8 @@ describe("SelectionManager Extended Tests", () => {
 
   beforeEach(() => {
     selectionManager = new SelectionManager(
-      () => ({ type: "number", value: 10 }), // getNumRows
-      () => ({ type: "number", value: 5 }), // getNumCols
+      () => ({ type: "number" as const, value: 10 }), // getNumRows
+      () => ({ type: "number" as const, value: 5 }), // getNumCols
       () => [], // getGroups
     );
   });
@@ -53,8 +53,8 @@ describe("SelectionManager Extended Tests", () => {
 
     it("should handle infinite selections in drag area", () => {
       const infiniteManager = new SelectionManager(
-        () => ({ type: "infinity" }),
-        () => ({ type: "infinity" }),
+        () => ({ type: "infinity" as const }),
+        () => ({ type: "infinity" as const }),
         () => [],
       );
 
@@ -171,12 +171,12 @@ describe("SelectionManager Extended Tests", () => {
     it("should find groups containing cells", () => {
       const group = {
         start: { row: 1, col: 1 },
-        end: { row: { type: "number", value: 3 }, col: { type: "number", value: 3 } },
+        end: { row: { type: "number" as const, value: 3 }, col: { type: "number" as const, value: 3 } },
       };
 
       const groupManager = new SelectionManager(
-        () => ({ type: "number", value: 10 }),
-        () => ({ type: "number", value: 10 }),
+        () => ({ type: "number" as const, value: 10 }),
+        () => ({ type: "number" as const, value: 10 }),
         () => [group],
       );
 
@@ -187,12 +187,12 @@ describe("SelectionManager Extended Tests", () => {
     it("should detect hovering over groups", () => {
       const group = {
         start: { row: 1, col: 1 },
-        end: { row: { type: "number", value: 3 }, col: { type: "number", value: 3 } },
+        end: { row: { type: "number" as const, value: 3 }, col: { type: "number" as const, value: 3 } },
       };
 
       const groupManager = new SelectionManager(
-        () => ({ type: "number", value: 10 }),
-        () => ({ type: "number", value: 10 }),
+        () => ({ type: "number" as const, value: 10 }),
+        () => ({ type: "number" as const, value: 10 }),
         () => [group],
       );
 
