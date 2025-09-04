@@ -155,14 +155,18 @@ describe("SelectionManager Extended Tests", () => {
         isFillHandle: true,
       });
       
-      const endCoords = selectionManager.getFillHandleSelectionEnd(
+      const endCoords = selectionManager.getFillHandleSelection(
         { row: 2, col: 2 },
         { row: 2, col: 5 } // More horizontal movement
       );
 
-      expect(endCoords?.col.type).toBe("number");
-      if (endCoords?.col.type === "number") {
-        expect(endCoords.col.value).toBe(5);
+      expect(endCoords).toBeDefined();
+      expect(endCoords?.type).not.toBe("none");
+      if (endCoords && endCoords.type !== "none") {
+        expect(endCoords.end.col.type).toBe("number");
+        if (endCoords.end.col.type === "number") {
+          expect(endCoords.end.col.value).toBe(5);
+        }
       }
     });
   });

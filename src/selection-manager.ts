@@ -24,13 +24,41 @@ type KeyboardEvent = {
   preventDefault: () => void;
 };
 
+export type FillEvent = {
+  /**
+   * The user’s original selection that defines the pattern/series.
+   */
+  seedRange: SMArea;
+  /**
+   * the new cells populated by the drag, excluding the seed: outputRange - seedRange.
+   */
+  fillRange: SMArea;
+  /**
+   * The direction of the fill.
+   */
+  direction: "up" | "down" | "left" | "right";
+  type: "extend" | "shrink";
+  /**
+   * seed range ∪ fill range
+   */
+  outputRange: SMArea;
+};
+
 export type IsSelecting =
   | {
       type: "none";
     }
-  | (SMArea & {
-      type: "drag" | "add" | "remove" | "shift" | "fill";
-    });
+  | (SMArea &
+      (
+        | {
+            type: "drag" | "add" | "remove" | "shift";
+          }
+        | {
+            type: "fill";
+            direction: FillEvent["direction"];
+            eventType: FillEvent["type"];
+          }
+      ));
 
 export type IsEditing =
   | {
@@ -167,38 +195,31 @@ export class SelectionManager {
   cellMouseDown(
     row: number,
     col: number,
-    keys: {
+    options: {
       shiftKey: boolean;
       ctrlKey: boolean;
       metaKey: boolean;
       isFillHandle: boolean;
     },
   ) {
-    const cmdKey = keys.metaKey || keys.ctrlKey;
+    const cmdKey = options.metaKey || options.ctrlKey;
     this.willMaybeUpdate();
     const lastSelection = this.selections[this.selections.length - 1];
-    if (keys.isFillHandle) {
-      const end = this.getFillHandleSelectionEnd(
+    if (options.isFillHandle) {
+      const fillHandleSelection = this.getFillHandleSelection(
         { row, col },
         {
           row,
           col,
         },
       );
-      if (end) {
-        this.isSelecting = {
-          start: { row, col },
-          end: {
-            row: end.row,
-            col: end.col,
-          },
-          type: "fill",
-        };
+      if (fillHandleSelection) {
+        this.isSelecting = fillHandleSelection;
         this.onUpdate();
         return;
       }
     }
-    if (keys.shiftKey && lastSelection) {
+    if (options.shiftKey && lastSelection) {
       this.selections.splice(this.selections.length - 1, 1);
       this.isSelecting = { ...lastSelection, type: "shift" };
       this.isSelecting.end = {
@@ -283,53 +304,140 @@ export class SelectionManager {
     return this.getGroups().find((group) => this.cellInSelection(cell, group));
   }
 
-  getFillHandleSelectionEnd(
+  getFillHandleSelection(
     start: { row: number; col: number },
     currentCell: { row: number; col: number },
-  ): { row: MaybeInfNumber; col: MaybeInfNumber } | undefined {
+  ): IsSelecting | undefined {
     const baseSelection = this.getFillHandleBaseSelection();
     if (!baseSelection) {
       return;
     }
-    const rowDiff = Math.abs(currentCell.row - start.row);
-    const colDiff = Math.abs(currentCell.col - start.col);
-    const minCol = this.min(baseSelection.start.col, baseSelection.end.col);
-    const minRow = this.min(baseSelection.start.row, baseSelection.end.row);
+    const minCol = Math.min(
+      currentCell.col,
+      this.min(baseSelection.start.col, baseSelection.end.col),
+    );
+    const minRow = Math.min(
+      currentCell.row,
+      this.min(baseSelection.start.row, baseSelection.end.row),
+    );
+    const maxRow = this.max(
+      currentCell.row,
+      this.max(baseSelection.start.row, baseSelection.end.row),
+    );
+    const maxCol = this.max(
+      currentCell.col,
+      this.max(baseSelection.start.col, baseSelection.end.col),
+    );
 
-    if (colDiff >= rowDiff) {
+    if (baseSelection.end.row.type === "infinity") {
       return {
-        row: { type: "number", value: minRow },
-        col: { type: "number", value: currentCell.col },
-      };
-    } else {
-      return {
-        row: { type: "number", value: currentCell.row },
-        col: { type: "number", value: minCol },
+        type: "fill",
+        direction: minCol < baseSelection.start.col ? "left" : "right",
+        eventType: "extend",
+        start: {
+          row: baseSelection.start.row,
+          col: minCol,
+        },
+        end: {
+          row: maxRow,
+          col: baseSelection.end.col,
+        },
       };
     }
+    if (baseSelection.end.col.type === "infinity") {
+      return {
+        type: "fill",
+        direction: minRow < baseSelection.start.row ? "up" : "down",
+        eventType: "extend",
+        start: {
+          row: minRow,
+          col: baseSelection.start.col,
+        },
+        end: {
+          row: maxRow,
+          col: baseSelection.end.col,
+        },
+      };
+    }
+
+    const rowDiff = Math.abs(currentCell.row - baseSelection.end.row.value);
+    const colDiff = Math.abs(currentCell.col - baseSelection.end.col.value);
+
+    if (rowDiff >= colDiff) {
+      if (this.cellInSelection(currentCell, baseSelection)) {
+        return {
+          type: "fill",
+          direction: "up",
+          eventType: "shrink",
+          start: {
+            row: minRow,
+            col: baseSelection.start.col,
+          },
+          end: {
+            row: { type: "number", value: currentCell.row },
+            col: baseSelection.end.col,
+          },
+        };
+      }
+      return {
+        type: "fill",
+        direction: minRow < baseSelection.start.row ? "up" : "down",
+        eventType: "extend",
+        start: {
+          row: minRow,
+          col: baseSelection.start.col,
+        },
+        end: {
+          row: maxRow,
+          col: baseSelection.end.col,
+        },
+      };
+    }
+
+    if (this.cellInSelection(currentCell, baseSelection)) {
+      return {
+        type: "fill",
+        direction: "left",
+        eventType: "shrink",
+        start: {
+          row: baseSelection.start.row,
+          col: minCol,
+        },
+        end: {
+          row: baseSelection.end.row,
+          col: { type: "number", value: currentCell.col },
+        },
+      };
+    }
+
+    return {
+      type: "fill",
+      direction: minCol < baseSelection.start.col ? "left" : "right",
+      eventType: "extend",
+      start: {
+        row: baseSelection.start.row,
+        col: minCol,
+      },
+      end: {
+        row: baseSelection.end.row,
+        col: maxCol,
+      },
+    };
   }
 
   cellMouseEnter(row: number, col: number) {
     this.willMaybeUpdate();
     if (this.isSelecting.type !== "none") {
       if (this.isSelecting.type === "fill") {
-        const fillHandleEnd = this.getFillHandleSelectionEnd(
+        const fillHandleSelection = this.getFillHandleSelection(
           this.isSelecting.start,
           {
             row,
             col,
           },
         );
-        if (fillHandleEnd) {
-          this.isSelecting.end = {
-            row: fillHandleEnd.row,
-            col: fillHandleEnd.col,
-          };
-        } else {
-          this.isSelecting.end = {
-            row: { type: "number", value: row },
-            col: { type: "number", value: col },
-          };
+        if (fillHandleSelection) {
+          this.isSelecting = fillHandleSelection;
         }
       } else {
         this.isSelecting.end = {
@@ -412,7 +520,7 @@ export class SelectionManager {
   headerMouseDown(
     index: number,
     type: "row" | "col",
-    keys: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
+    options: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
   ) {
     this.willMaybeUpdate();
     const lastSelection = this.selections[this.selections.length - 1];
@@ -420,7 +528,7 @@ export class SelectionManager {
     const actualEndRow = this.getActualEndRow();
     const actualEndCol = this.getActualEndCol();
 
-    const cmdKey = keys.metaKey || keys.ctrlKey;
+    const cmdKey = options.metaKey || options.ctrlKey;
 
     const defaultIsSelecting = () => {
       if (type === "row") {
@@ -437,7 +545,7 @@ export class SelectionManager {
         };
       }
     };
-    if (keys.shiftKey && lastSelection) {
+    if (options.shiftKey && lastSelection) {
       this.selections.splice(this.selections.length - 1, 1);
       this.isSelecting = { ...lastSelection, type: "shift" };
       if (type === "row") {
@@ -476,16 +584,24 @@ export class SelectionManager {
     this.willMaybeUpdate();
     const actualEndCol = this.getActualEndCol();
     const actualEndRow = this.getActualEndRow();
+    const fillHandleBaseSelection = this.getFillHandleBaseSelection();
     if (this.isSelecting.type !== "none") {
+      this.isSelecting.start = fillHandleBaseSelection
+        ? fillHandleBaseSelection.start
+        : this.isSelecting.start;
       if (type === "row") {
         this.isSelecting.end = {
-          row: { type: "number", value: index },
+          row: fillHandleBaseSelection
+            ? fillHandleBaseSelection.end.row
+            : { type: "number", value: index },
           col: actualEndCol,
         };
       } else {
         this.isSelecting.end = {
           row: actualEndRow,
-          col: { type: "number", value: index },
+          col: fillHandleBaseSelection
+            ? fillHandleBaseSelection.end.col
+            : { type: "number", value: index },
         };
       }
     }
@@ -1942,7 +2058,12 @@ export class SelectionManager {
         }
       } else if (
         event.key === "ArrowDown" &&
-        this.lt(newRow, numRows.type === "infinity" ? { type: "infinity" } : { type: "number", value: numRows.value - 1 })
+        this.lt(
+          newRow,
+          numRows.type === "infinity"
+            ? { type: "infinity" }
+            : { type: "number", value: numRows.value - 1 },
+        )
       ) {
         if (newRow.type === "number") {
           newRow = { type: "number", value: newRow.value + 1 };
@@ -1960,7 +2081,12 @@ export class SelectionManager {
         }
       } else if (
         event.key === "ArrowRight" &&
-        this.lt(newCol, numCols.type === "infinity" ? { type: "infinity" } : { type: "number", value: numCols.value - 1 })
+        this.lt(
+          newCol,
+          numCols.type === "infinity"
+            ? { type: "infinity" }
+            : { type: "number", value: numCols.value - 1 },
+        )
       ) {
         if (newCol.type === "number") {
           newCol = { type: "number", value: newCol.value + 1 };
@@ -2191,11 +2317,8 @@ export class SelectionManager {
     };
   }
 
-  private listenToFillListeners: ((
-    expandFrom: SMArea,
-    fillArea: SMArea,
-  ) => void)[] = [];
-  listenToFill(callback: (expandFrom: SMArea, fillArea: SMArea) => void) {
+  private listenToFillListeners: ((ev: FillEvent) => void)[] = [];
+  listenToFill(callback: (ev: FillEvent) => void) {
     this.listenToFillListeners.push(callback);
     return () => {
       this.listenToFillListeners = this.listenToFillListeners.filter(
@@ -2531,6 +2654,128 @@ export class SelectionManager {
     this.insertParsedData(text);
   }
 
+  /**
+   * Computes the difference between two areas (a - b).
+   * Returns the area that is in 'a' but not in 'b'.
+   * If the result would be negative, returns the absolute area.
+   */
+  difference(a: SMArea, b: SMArea): SMArea {
+    const aMinRow = this.min(a.start.row, a.end.row);
+    const aMaxRow = this.max(a.start.row, a.end.row);
+    const aMinCol = this.min(a.start.col, a.end.col);
+    const aMaxCol = this.max(a.start.col, a.end.col);
+
+    const bMinRow = this.min(b.start.row, b.end.row);
+    const bMaxRow = this.max(b.start.row, b.end.row);
+    const bMinCol = this.min(b.start.col, b.end.col);
+    const bMaxCol = this.max(b.start.col, b.end.col);
+
+    // Calculate the difference bounds
+    let startRow = Math.max(
+      aMinRow,
+      bMaxRow.type === "infinity" ? aMinRow : bMaxRow.value + 1,
+    );
+    let endRow = aMaxRow;
+    let startCol = Math.max(
+      aMinCol,
+      bMaxCol.type === "infinity" ? aMinCol : bMaxCol.value + 1,
+    );
+    let endCol = aMaxCol;
+
+    // If the difference results in negative bounds, take absolute values
+    if (startRow > (endRow.type === "infinity" ? Infinity : endRow.value)) {
+      const temp = startRow;
+      startRow = endRow.type === "infinity" ? 0 : Math.min(temp, endRow.value);
+      endRow = {
+        type: "number",
+        value: Math.max(temp, endRow.type === "infinity" ? 0 : endRow.value),
+      };
+    }
+
+    if (startCol > (endCol.type === "infinity" ? Infinity : endCol.value)) {
+      const temp = startCol;
+      startCol = endCol.type === "infinity" ? 0 : Math.min(temp, endCol.value);
+      endCol = {
+        type: "number",
+        value: Math.max(temp, endCol.type === "infinity" ? 0 : endCol.value),
+      };
+    }
+
+    return {
+      start: { row: startRow, col: startCol },
+      end: { row: endRow, col: endCol },
+    };
+  }
+
+  /**
+   * Computes the intersection of two areas.
+   * Returns the area that is common to both input areas.
+   * Returns null if there is no intersection.
+   */
+  intersection(a: SMArea, b: SMArea): SMArea | null {
+    const aMinRow = this.min(a.start.row, a.end.row);
+    const aMaxRow = this.max(a.start.row, a.end.row);
+    const aMinCol = this.min(a.start.col, a.end.col);
+    const aMaxCol = this.max(a.start.col, a.end.col);
+
+    const bMinRow = this.min(b.start.row, b.end.row);
+    const bMaxRow = this.max(b.start.row, b.end.row);
+    const bMinCol = this.min(b.start.col, b.end.col);
+    const bMaxCol = this.max(b.start.col, b.end.col);
+
+    const startRow = Math.max(aMinRow, bMinRow);
+    const endRow = this.minMaybeInf(aMaxRow, bMaxRow);
+    const startCol = Math.max(aMinCol, bMinCol);
+    const endCol = this.minMaybeInf(aMaxCol, bMaxCol);
+
+    // Check if intersection is valid
+    if (
+      this.gt({ type: "number", value: startRow }, endRow) ||
+      this.gt({ type: "number", value: startCol }, endCol)
+    ) {
+      return null;
+    }
+
+    return {
+      start: { row: startRow, col: startCol },
+      end: { row: endRow, col: endCol },
+    };
+  }
+
+  /**
+   * Checks if two areas are equal.
+   */
+  areasEqual(a: SMArea, b: SMArea): boolean {
+    const aNormalized = this.normalizeSelection(a);
+    const bNormalized = this.normalizeSelection(b);
+
+    return (
+      aNormalized.start.row === bNormalized.start.row &&
+      aNormalized.start.col === bNormalized.start.col &&
+      this.equals(aNormalized.end.row, bNormalized.end.row) &&
+      this.equals(aNormalized.end.col, bNormalized.end.col)
+    );
+  }
+
+  /**
+   * Calculates the area (number of cells) in a selection.
+   * Returns Infinity for infinite selections.
+   */
+  getAreaSize(area: SMArea): number {
+    const minRow = this.min(area.start.row, area.end.row);
+    const maxRow = this.max(area.start.row, area.end.row);
+    const minCol = this.min(area.start.col, area.end.col);
+    const maxCol = this.max(area.start.col, area.end.col);
+
+    if (maxRow.type === "infinity" || maxCol.type === "infinity") {
+      return Infinity;
+    }
+
+    const rows = maxRow.value - minRow + 1;
+    const cols = maxCol.value - minCol + 1;
+    return rows * cols;
+  }
+
   mouseUp() {
     this.willMaybeUpdate();
     if (this.isSelecting.type !== "none") {
@@ -2538,28 +2783,41 @@ export class SelectionManager {
         const fillHandleBaseSelection = this.getFillHandleBaseSelection();
         if (fillHandleBaseSelection) {
           const fillArea = this.isSelecting;
-          const endOfSelection = this.isSelecting.end;
-          if (
-            endOfSelection.col.type === "number" &&
-            endOfSelection.row.type === "number" &&
-            this.cellInSelection(
-              { row: endOfSelection.row.value, col: endOfSelection.col.value },
-              fillHandleBaseSelection,
-            )
-          ) {
-            this.deselectArea(this.isSelecting);
-            this.listenToFillListeners.forEach((listener) =>
-              listener(fillHandleBaseSelection, fillArea),
-            );
+
+          // Calculate the actual fill range (the new cells, excluding the seed)
+          let fillRange: SMArea;
+          if (this.isSelecting.eventType === "extend") {
+            // For extend, fillRange is the difference between output and seed
+            fillRange = this.difference(fillArea, fillHandleBaseSelection);
           } else {
+            // For shrink, fillRange represents the area that was removed
+            fillRange = this.difference(fillHandleBaseSelection, fillArea);
+          }
+
+          const fillEvent: FillEvent = {
+            seedRange: fillHandleBaseSelection,
+            fillRange: fillRange,
+            direction: this.isSelecting.direction,
+            type: this.isSelecting.eventType,
+            outputRange: fillArea,
+          };
+
+          if (this.isSelecting.eventType === "shrink") {
+            // When shrinking back to seed, we deselect the current area and keep only the seed
+            this.selections.length = 0;
+            // // Ensure the seed range remains selected
+            this.deselectArea(fillHandleBaseSelection);
+            this.selections.push(fillArea);
+          } else {
+            // For normal extend/shrink operations, add the new selection
             this.selections.push({
               start: this.isSelecting.start,
               end: this.isSelecting.end,
             });
-            this.listenToFillListeners.forEach((listener) =>
-              listener(fillHandleBaseSelection, fillArea),
-            );
           }
+
+          // Always trigger the fill event callback
+          this.listenToFillListeners.forEach((listener) => listener(fillEvent));
         }
       } else if (this.isSelecting.type === "remove") {
         this.deselectArea(this.isSelecting);
