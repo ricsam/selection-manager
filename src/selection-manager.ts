@@ -24,25 +24,32 @@ type KeyboardEvent = {
   preventDefault: () => void;
 };
 
-export type FillEvent = {
-  /**
-   * The user’s original selection that defines the pattern/series.
-   */
-  seedRange: SMArea;
-  /**
-   * the new cells populated by the drag, excluding the seed: outputRange - seedRange.
-   */
-  fillRange: SMArea;
-  /**
-   * The direction of the fill.
-   */
-  direction: "up" | "down" | "left" | "right";
-  type: "extend" | "shrink";
-  /**
-   * seed range ∪ fill range
-   */
-  outputRange: SMArea;
-};
+export type FillDirection = "up" | "down" | "left" | "right";
+
+export type FillEvent =
+  | {
+      type: "extend";
+      /**
+       * The user’s original selection that defines the pattern/series.
+       */
+      seedRange: SMArea;
+      /**
+       * the new cells populated by the drag, excluding the seed: outputRange - seedRange.
+       */
+      fillRange: SMArea;
+      /**
+       * The direction of the fill.
+       */
+      direction: FillDirection;
+      /**
+       * seed range ∪ fill range
+       */
+      outputRange: SMArea;
+    }
+  | {
+      type: "shrink";
+      rangeToClear: SMArea;
+    };
 
 export type IsSelecting =
   | {
@@ -55,7 +62,7 @@ export type IsSelecting =
           }
         | {
             type: "fill";
-            direction: FillEvent["direction"];
+            direction: FillDirection;
             eventType: FillEvent["type"];
           }
       ));
@@ -2655,9 +2662,13 @@ export class SelectionManager {
   }
 
   /**
-   * Computes the difference between two areas (a - b).
-   * Returns the area that is in 'a' but not in 'b'.
-   * If the result would be negative, returns the absolute area.
+   * Computes the practical difference between two areas for spreadsheet operations.
+   * Returns the rectangular area that represents the "new" part when extending from b to a,
+   * or the "removed" part when shrinking from a to b.
+   * 
+   * For fill operations:
+   * - extend: difference(newSelection, seedSelection) = new cells to fill
+   * - shrink: difference(seedSelection, newSelection) = cells to clear
    */
   difference(a: SMArea, b: SMArea): SMArea {
     const aMinRow = this.min(a.start.row, a.end.row);
@@ -2670,111 +2681,48 @@ export class SelectionManager {
     const bMinCol = this.min(b.start.col, b.end.col);
     const bMaxCol = this.max(b.start.col, b.end.col);
 
-    // Calculate the difference bounds
-    let startRow = Math.max(
-      aMinRow,
-      bMaxRow.type === "infinity" ? aMinRow : bMaxRow.value + 1,
-    );
-    let endRow = aMaxRow;
-    let startCol = Math.max(
-      aMinCol,
-      bMaxCol.type === "infinity" ? aMinCol : bMaxCol.value + 1,
-    );
-    let endCol = aMaxCol;
-
-    // If the difference results in negative bounds, take absolute values
-    if (startRow > (endRow.type === "infinity" ? Infinity : endRow.value)) {
-      const temp = startRow;
-      startRow = endRow.type === "infinity" ? 0 : Math.min(temp, endRow.value);
-      endRow = {
-        type: "number",
-        value: Math.max(temp, endRow.type === "infinity" ? 0 : endRow.value),
+    // For spreadsheet fill operations, we want the rectangular difference
+    // This handles the most common cases for extend/shrink operations
+    
+    // If A extends beyond B vertically (bottom extension/shrink)
+    if (aMaxRow.type === "number" && bMaxRow.type === "number" && 
+        aMaxRow.value > bMaxRow.value && aMinRow <= bMaxRow.value) {
+      return {
+        start: { row: bMaxRow.value + 1, col: Math.min(aMinCol, bMinCol) },
+        end: { row: aMaxRow, col: this.maxMaybeInf(aMaxCol, bMaxCol) },
+      };
+    }
+    
+    // If A extends beyond B horizontally (right extension/shrink)  
+    if (aMaxCol.type === "number" && bMaxCol.type === "number" &&
+        aMaxCol.value > bMaxCol.value && aMinCol <= bMaxCol.value) {
+      return {
+        start: { row: Math.min(aMinRow, bMinRow), col: bMaxCol.value + 1 },
+        end: { row: this.maxMaybeInf(aMaxRow, bMaxRow), col: aMaxCol },
+      };
+    }
+    
+    // If B extends beyond A (shrink case - return the area being removed)
+    if (bMaxRow.type === "number" && aMaxRow.type === "number" && 
+        bMaxRow.value > aMaxRow.value) {
+      return {
+        start: { row: aMaxRow.value + 1, col: Math.min(aMinCol, bMinCol) },
+        end: { row: bMaxRow, col: this.maxMaybeInf(aMaxCol, bMaxCol) },
+      };
+    }
+    
+    if (bMaxCol.type === "number" && aMaxCol.type === "number" &&
+        bMaxCol.value > aMaxCol.value) {
+      return {
+        start: { row: Math.min(aMinRow, bMinRow), col: aMaxCol.value + 1 },
+        end: { row: this.maxMaybeInf(aMaxRow, bMaxRow), col: bMaxCol },
       };
     }
 
-    if (startCol > (endCol.type === "infinity" ? Infinity : endCol.value)) {
-      const temp = startCol;
-      startCol = endCol.type === "infinity" ? 0 : Math.min(temp, endCol.value);
-      endCol = {
-        type: "number",
-        value: Math.max(temp, endCol.type === "infinity" ? 0 : endCol.value),
-      };
-    }
-
-    return {
-      start: { row: startRow, col: startCol },
-      end: { row: endRow, col: endCol },
-    };
+    // Fallback: return the original area A (no meaningful difference)
+    return a;
   }
 
-  /**
-   * Computes the intersection of two areas.
-   * Returns the area that is common to both input areas.
-   * Returns null if there is no intersection.
-   */
-  intersection(a: SMArea, b: SMArea): SMArea | null {
-    const aMinRow = this.min(a.start.row, a.end.row);
-    const aMaxRow = this.max(a.start.row, a.end.row);
-    const aMinCol = this.min(a.start.col, a.end.col);
-    const aMaxCol = this.max(a.start.col, a.end.col);
-
-    const bMinRow = this.min(b.start.row, b.end.row);
-    const bMaxRow = this.max(b.start.row, b.end.row);
-    const bMinCol = this.min(b.start.col, b.end.col);
-    const bMaxCol = this.max(b.start.col, b.end.col);
-
-    const startRow = Math.max(aMinRow, bMinRow);
-    const endRow = this.minMaybeInf(aMaxRow, bMaxRow);
-    const startCol = Math.max(aMinCol, bMinCol);
-    const endCol = this.minMaybeInf(aMaxCol, bMaxCol);
-
-    // Check if intersection is valid
-    if (
-      this.gt({ type: "number", value: startRow }, endRow) ||
-      this.gt({ type: "number", value: startCol }, endCol)
-    ) {
-      return null;
-    }
-
-    return {
-      start: { row: startRow, col: startCol },
-      end: { row: endRow, col: endCol },
-    };
-  }
-
-  /**
-   * Checks if two areas are equal.
-   */
-  areasEqual(a: SMArea, b: SMArea): boolean {
-    const aNormalized = this.normalizeSelection(a);
-    const bNormalized = this.normalizeSelection(b);
-
-    return (
-      aNormalized.start.row === bNormalized.start.row &&
-      aNormalized.start.col === bNormalized.start.col &&
-      this.equals(aNormalized.end.row, bNormalized.end.row) &&
-      this.equals(aNormalized.end.col, bNormalized.end.col)
-    );
-  }
-
-  /**
-   * Calculates the area (number of cells) in a selection.
-   * Returns Infinity for infinite selections.
-   */
-  getAreaSize(area: SMArea): number {
-    const minRow = this.min(area.start.row, area.end.row);
-    const maxRow = this.max(area.start.row, area.end.row);
-    const minCol = this.min(area.start.col, area.end.col);
-    const maxCol = this.max(area.start.col, area.end.col);
-
-    if (maxRow.type === "infinity" || maxCol.type === "infinity") {
-      return Infinity;
-    }
-
-    const rows = maxRow.value - minRow + 1;
-    const cols = maxCol.value - minCol + 1;
-    return rows * cols;
-  }
 
   mouseUp() {
     this.willMaybeUpdate();
@@ -2782,42 +2730,41 @@ export class SelectionManager {
       if (this.isSelecting.type === "fill") {
         const fillHandleBaseSelection = this.getFillHandleBaseSelection();
         if (fillHandleBaseSelection) {
-          const fillArea = this.isSelecting;
-
-          // Calculate the actual fill range (the new cells, excluding the seed)
-          let fillRange: SMArea;
-          if (this.isSelecting.eventType === "extend") {
-            // For extend, fillRange is the difference between output and seed
-            fillRange = this.difference(fillArea, fillHandleBaseSelection);
-          } else {
-            // For shrink, fillRange represents the area that was removed
-            fillRange = this.difference(fillHandleBaseSelection, fillArea);
-          }
-
-          const fillEvent: FillEvent = {
-            seedRange: fillHandleBaseSelection,
-            fillRange: fillRange,
-            direction: this.isSelecting.direction,
-            type: this.isSelecting.eventType,
-            outputRange: fillArea,
+          const triggerEvent = (ev: FillEvent) => {
+            this.listenToFillListeners.forEach((listener) => listener(ev));
           };
 
           if (this.isSelecting.eventType === "shrink") {
-            // When shrinking back to seed, we deselect the current area and keep only the seed
-            this.selections.length = 0;
-            // // Ensure the seed range remains selected
             this.deselectArea(fillHandleBaseSelection);
-            this.selections.push(fillArea);
+            this.selections.push(this.isSelecting);
+            console.log("clear", {
+              fillHandleBaseSelection,
+              currentSelection: structuredClone(this.isSelecting),
+            });
+            const rangeToClear = this.difference(
+              fillHandleBaseSelection,
+              this.isSelecting,
+            );
+            triggerEvent({
+              type: "shrink",
+              rangeToClear,
+            });
           } else {
-            // For normal extend/shrink operations, add the new selection
             this.selections.push({
               start: this.isSelecting.start,
               end: this.isSelecting.end,
             });
+            triggerEvent({
+              seedRange: fillHandleBaseSelection,
+              fillRange: this.difference(
+                this.isSelecting,
+                fillHandleBaseSelection,
+              ),
+              direction: this.isSelecting.direction,
+              type: this.isSelecting.eventType,
+              outputRange: this.isSelecting,
+            });
           }
-
-          // Always trigger the fill event callback
-          this.listenToFillListeners.forEach((listener) => listener(fillEvent));
         }
       } else if (this.isSelecting.type === "remove") {
         this.deselectArea(this.isSelecting);

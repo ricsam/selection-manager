@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.12
+
+### Patch Changes
+
+- improve the fill handle API
+
 ## 0.0.11
 
 ### Patch Changes

@@ -735,14 +735,8 @@ function Test6() {
   });
 
   React.useEffect(() => {
-    return selectionManager.listenToFill((fillEvent) => {
-      console.log("fillArea", {
-        seedRange: fillEvent.seedRange,
-        fillRange: fillEvent.fillRange,
-        direction: fillEvent.direction,
-        type: fillEvent.type,
-        outputRange: fillEvent.outputRange
-      });
+    return selectionManager.listenToFill((ev) => {
+      console.log("fillArea", ev);
     });
   }, [selectionManager]);
 
