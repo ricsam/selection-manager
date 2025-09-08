@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.18
+
+### Patch Changes
+
+- better positioning for the input capture element /2
+
 ## 0.0.17
 
 ### Patch Changes

@@ -2457,22 +2457,30 @@ export class SelectionManager {
           if (!inputCaptureElement) {
             return;
           }
-          const myRect = el.getBoundingClientRect();
+
           const origStyles = {
             top: inputCaptureElement.style.top,
             left: inputCaptureElement.style.left,
             width: inputCaptureElement.style.width,
             height: inputCaptureElement.style.height,
           };
-          inputCaptureElement.style.top = `${myRect.top}px`;
-          inputCaptureElement.style.left = `${myRect.left}px`;
-          inputCaptureElement.style.width = `${myRect.width}px`;
-          inputCaptureElement.style.height = `${myRect.height}px`;
+          const setupPositioning = () => {
+            const myRect = el.getBoundingClientRect();
+            inputCaptureElement.style.top = `${myRect.top}px`;
+            inputCaptureElement.style.left = `${myRect.left}px`;
+            inputCaptureElement.style.width = `${myRect.width}px`;
+            inputCaptureElement.style.height = `${myRect.height}px`;
+          };
+          inputCaptureElement.addEventListener("keydown", setupPositioning);
           return () => {
             inputCaptureElement.style.top = origStyles.top;
             inputCaptureElement.style.left = origStyles.left;
             inputCaptureElement.style.width = origStyles.width;
             inputCaptureElement.style.height = origStyles.height;
+            inputCaptureElement.removeEventListener(
+              "keydown",
+              setupPositioning,
+            );
           };
         },
       ),
