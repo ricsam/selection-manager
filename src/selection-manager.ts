@@ -2028,108 +2028,120 @@ export class SelectionManager {
     }
 
     // handle arrow keys for navigation and selection
-    if (
-      event.key === "ArrowUp" ||
-      event.key === "ArrowDown" ||
-      event.key === "ArrowLeft" ||
-      event.key === "ArrowRight"
-    ) {
-      let shouldUpdate = false;
-
-      // Get the current active position (start of last selection, or 0,0 if no selection)
-      const lastSelection = this.selections[this.selections.length - 1];
-      const currentRow: MaybeInfNumber = lastSelection
-        ? event.shiftKey
-          ? lastSelection.end.row
-          : { type: "number", value: lastSelection.start.row }
-        : { type: "number", value: 0 };
-      const currentCol: MaybeInfNumber = lastSelection
-        ? event.shiftKey
-          ? lastSelection.end.col
-          : { type: "number", value: lastSelection.start.col }
-        : { type: "number", value: 0 };
-
-      // Calculate new position based on arrow key
-      let newRow = currentRow;
-      let newCol = currentCol;
-
-      const numRows = this.getNumRows();
-      const numCols = this.getNumCols();
-
+    {
+      let key = event.key;
+      let shiftKey = event.shiftKey;
+      if (event.key === "Enter") {
+        key = event.shiftKey ? "ArrowUp" : "ArrowDown";
+        shiftKey = false;
+      }
+      if (event.key === "Tab") {
+        key = event.shiftKey ? "ArrowLeft" : "ArrowRight";
+        shiftKey = false;
+      }
       if (
-        event.key === "ArrowUp" &&
-        this.gt(newRow, { type: "number", value: 0 })
+        key === "ArrowUp" ||
+        key === "ArrowDown" ||
+        key === "ArrowLeft" ||
+        key === "ArrowRight"
       ) {
-        if (newRow.type === "number") {
-          newRow = { type: "number", value: newRow.value - 1 };
-        } else {
-          newRow = { type: "infinity" };
-        }
-      } else if (
-        event.key === "ArrowDown" &&
-        this.lt(
-          newRow,
-          numRows.type === "infinity"
-            ? { type: "infinity" }
-            : { type: "number", value: numRows.value - 1 },
-        )
-      ) {
-        if (newRow.type === "number") {
-          newRow = { type: "number", value: newRow.value + 1 };
-        } else {
-          newRow = { type: "infinity" };
-        }
-      } else if (
-        event.key === "ArrowLeft" &&
-        this.gt(newCol, { type: "number", value: 0 })
-      ) {
-        if (newCol.type === "number") {
-          newCol = { type: "number", value: newCol.value - 1 };
-        } else {
-          newCol = { type: "infinity" };
-        }
-      } else if (
-        event.key === "ArrowRight" &&
-        this.lt(
-          newCol,
-          numCols.type === "infinity"
-            ? { type: "infinity" }
-            : { type: "number", value: numCols.value - 1 },
-        )
-      ) {
-        if (newCol.type === "number") {
-          newCol = { type: "number", value: newCol.value + 1 };
-        } else {
-          newCol = { type: "infinity" };
-        }
-      }
+        let shouldUpdate = false;
 
-      // If position changed
-      if (newRow !== currentRow || newCol !== currentCol) {
-        if (event.shiftKey && lastSelection) {
-          // Extend current selection
-          lastSelection.end = { row: newRow, col: newCol };
-          shouldUpdate = true;
-        } else {
-          if (newRow.type === "infinity" || newCol.type === "infinity") {
-            throw new Error("Invalid newRow or newCol");
+        // Get the current active position (start of last selection, or 0,0 if no selection)
+        const lastSelection = this.selections[this.selections.length - 1];
+        const currentRow: MaybeInfNumber = lastSelection
+          ? shiftKey
+            ? lastSelection.end.row
+            : { type: "number", value: lastSelection.start.row }
+          : { type: "number", value: 0 };
+        const currentCol: MaybeInfNumber = lastSelection
+          ? shiftKey
+            ? lastSelection.end.col
+            : { type: "number", value: lastSelection.start.col }
+          : { type: "number", value: 0 };
+
+        // Calculate new position based on arrow key
+        let newRow = currentRow;
+        let newCol = currentCol;
+
+        const numRows = this.getNumRows();
+        const numCols = this.getNumCols();
+
+        if (
+          key === "ArrowUp" &&
+          this.gt(newRow, { type: "number", value: 0 })
+        ) {
+          if (newRow.type === "number") {
+            newRow = { type: "number", value: newRow.value - 1 };
+          } else {
+            newRow = { type: "infinity" };
           }
-          // Create new single-cell selection
-          this.selections = [
-            {
-              start: { row: newRow.value, col: newCol.value },
-              end: { row: newRow, col: newCol },
-            },
-          ];
-          shouldUpdate = true;
+        } else if (
+          key === "ArrowDown" &&
+          this.lt(
+            newRow,
+            numRows.type === "infinity"
+              ? { type: "infinity" }
+              : { type: "number", value: numRows.value - 1 },
+          )
+        ) {
+          if (newRow.type === "number") {
+            newRow = { type: "number", value: newRow.value + 1 };
+          } else {
+            newRow = { type: "infinity" };
+          }
+        } else if (
+          key === "ArrowLeft" &&
+          this.gt(newCol, { type: "number", value: 0 })
+        ) {
+          if (newCol.type === "number") {
+            newCol = { type: "number", value: newCol.value - 1 };
+          } else {
+            newCol = { type: "infinity" };
+          }
+        } else if (
+          key === "ArrowRight" &&
+          this.lt(
+            newCol,
+            numCols.type === "infinity"
+              ? { type: "infinity" }
+              : { type: "number", value: numCols.value - 1 },
+          )
+        ) {
+          if (newCol.type === "number") {
+            newCol = { type: "number", value: newCol.value + 1 };
+          } else {
+            newCol = { type: "infinity" };
+          }
         }
-      }
 
-      if (shouldUpdate) {
-        event.preventDefault();
-        this.onUpdate();
+        // If position changed
+        if (newRow !== currentRow || newCol !== currentCol) {
+          if (shiftKey && lastSelection) {
+            // Extend current selection
+            lastSelection.end = { row: newRow, col: newCol };
+            shouldUpdate = true;
+          } else {
+            if (newRow.type === "infinity" || newCol.type === "infinity") {
+              throw new Error("Invalid newRow or newCol");
+            }
+            // Create new single-cell selection
+            this.selections = [
+              {
+                start: { row: newRow.value, col: newCol.value },
+                end: { row: newRow, col: newCol },
+              },
+            ];
+            shouldUpdate = true;
+          }
+        }
+
+        if (shouldUpdate) {
+          event.preventDefault();
+          this.onUpdate();
+        }
+        return;
       }
-      return;
     }
   }
   /**
