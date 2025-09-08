@@ -2895,6 +2895,9 @@ export class SelectionManager {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Enter") {
         save();
+      } else if (e.key === "Tab") {
+        save();
+        e.preventDefault();
       }
     };
     el.addEventListener("blur", onBlur);

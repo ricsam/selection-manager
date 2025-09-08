@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.16
+
+### Patch Changes
+
+- capture tab when finishing an edit
+
 ## 0.0.15
 
 ### Patch Changes
