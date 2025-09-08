@@ -2440,6 +2440,42 @@ export class SelectionManager {
       this.onNextState(() => {
         setupBoxShadow();
       }),
+      this.observeStateChange(
+        () => {
+          const topLeftSelectedCell = this.getTopLeftCellInSelection();
+          if (topLeftSelectedCell && this.inputCaptureElement) {
+            if (
+              topLeftSelectedCell.col === cell.col &&
+              topLeftSelectedCell.row === cell.row
+            ) {
+              return this.inputCaptureElement;
+            }
+          }
+          return null;
+        },
+        (inputCaptureElement) => {
+          if (!inputCaptureElement) {
+            return;
+          }
+          const myRect = el.getBoundingClientRect();
+          const origStyles = {
+            top: inputCaptureElement.style.top,
+            left: inputCaptureElement.style.left,
+            width: inputCaptureElement.style.width,
+            height: inputCaptureElement.style.height,
+          };
+          inputCaptureElement.style.top = `${myRect.top}px`;
+          inputCaptureElement.style.left = `${myRect.left}px`;
+          inputCaptureElement.style.width = `${myRect.width}px`;
+          inputCaptureElement.style.height = `${myRect.height}px`;
+          return () => {
+            inputCaptureElement.style.top = origStyles.top;
+            inputCaptureElement.style.left = origStyles.left;
+            inputCaptureElement.style.width = origStyles.width;
+            inputCaptureElement.style.height = origStyles.height;
+          };
+        },
+      ),
     ];
     return () => {
       el.removeEventListener("mousedown", onMouseDown);
@@ -2508,7 +2544,7 @@ export class SelectionManager {
       }
     };
 
-    const cleanup = this.onNextState((state) => {
+    const cleanup = this.onNextState(function observeStateChange(state) {
       const val = selector(state);
       if (!value || value.current !== val) {
         value = { current: val };
@@ -2676,6 +2712,8 @@ export class SelectionManager {
     // Fallback: return the original area A (no meaningful difference)
     return a;
   }
+
+  inputCaptureElement: HTMLTextAreaElement | null = null;
 
   mouseUp() {
     this.willMaybeUpdate();
@@ -2846,7 +2884,9 @@ export class SelectionManager {
             });
           };
           window.addEventListener("keydown", onKeyDown);
+          this.inputCaptureElement = textarea;
           return () => {
+            this.inputCaptureElement = null;
             window.removeEventListener("keydown", onKeyDown);
             document.body.removeChild(textarea);
           };
