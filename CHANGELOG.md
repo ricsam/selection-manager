@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.15
+
+### Patch Changes
+
+- improve the input capture
+
 ## 0.0.14
 
 ### Patch Changes

@@ -1,11 +1,11 @@
 import React, { useCallback, useState } from "react";
 import {
   SelectionManager,
+  useInitializeSelectionManager,
+  useSelectionManager,
   type SelectionManagerState,
   type SMArea,
-} from "./src/selection-manager";
-import { useInitializeSelectionManager } from "./src/use-initialize-selection-manager";
-import { useSelectionManager } from "./src/use-selection-manager";
+} from "./src/lib";
 
 // Grid component that displays an 8x8 grid (64 cells) with selection support
 interface GridProps {
@@ -280,7 +280,7 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
         <h3>{title}</h3>
         <div
           ref={ref}
-          tabIndex={0}
+          data-debug={title}
           style={{
             display: "inline-grid",
             gridTemplateColumns: "repeat(9, 40px)", // 1 for row headers + 8 for columns
@@ -837,7 +837,7 @@ function Test6() {
       </h3>
       <div
         ref={setContainerElement}
-        tabIndex={0}
+        data-debug="Test 6"
         style={{
           display: "inline-grid",
           gridTemplateColumns: "repeat(9, 40px)", // 1 for row headers + 8 for columns

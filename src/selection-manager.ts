@@ -1,20 +1,16 @@
+import { applyPatches, createPatches } from "./patches";
+import type {
+  FillEvent,
+  IsEditing,
+  IsHovering,
+  IsSelecting,
+  MaybeInfNumber,
+  RealNumber,
+  SelectionManagerState,
+  SMArea,
+  StatePatch,
+} from "./types";
 import { parseCSVContent } from "./utils";
-
-export type RealNumber = { type: "number"; value: number };
-export type InfinityNumber = { type: "infinity" };
-export type MaybeInfNumber = RealNumber | InfinityNumber;
-
-export type SMArea = {
-  start: { row: number; col: number };
-  /**
-   * The last row and column of the area.
-   * Inclusive. Support row: Infinity and col: Infinity.
-   */
-  end: {
-    row: MaybeInfNumber;
-    col: MaybeInfNumber;
-  };
-};
 
 type KeyboardEvent = {
   key: string;
@@ -23,87 +19,6 @@ type KeyboardEvent = {
   metaKey: boolean;
   preventDefault: () => void;
 };
-
-export type FillDirection = "up" | "down" | "left" | "right";
-
-export type FillEvent =
-  | {
-      type: "extend";
-      /**
-       * The user’s original selection that defines the pattern/series.
-       */
-      seedRange: SMArea;
-      /**
-       * the new cells populated by the drag, excluding the seed: outputRange - seedRange.
-       */
-      fillRange: SMArea;
-      /**
-       * The direction of the fill.
-       */
-      direction: FillDirection;
-      /**
-       * seed range ∪ fill range
-       */
-      outputRange: SMArea;
-    }
-  | {
-      type: "shrink";
-      rangeToClear: SMArea;
-    };
-
-export type IsSelecting =
-  | {
-      type: "none";
-    }
-  | (SMArea &
-      (
-        | {
-            type: "drag" | "add" | "remove" | "shift";
-          }
-        | {
-            type: "fill";
-            direction: FillDirection;
-            eventType: FillEvent["type"];
-          }
-      ));
-
-export type IsEditing =
-  | {
-      type: "none";
-    }
-  | {
-      type: "cell";
-      row: number;
-      col: number;
-      initialValue?: string;
-    };
-
-export type SelectionManagerState = {
-  hasFocus: boolean;
-  selections: SMArea[];
-  isSelecting: IsSelecting;
-  isEditing: IsEditing;
-  isHovering: IsHovering;
-};
-
-type IsHovering =
-  | {
-      type: "none";
-    }
-  | {
-      type: "cell";
-      row: number;
-      col: number;
-    }
-  | {
-      type: "group";
-      group: SMArea;
-    }
-  | {
-      type: "header";
-      index: number;
-      headerType: "row" | "col";
-    };
 const sort = (a: number | "INF", b: number | "INF"): number => {
   if (a === b) {
     return 0;
@@ -116,6 +31,7 @@ const sort = (a: number | "INF", b: number | "INF"): number => {
   }
   return a - b;
 };
+
 export class SelectionManager {
   hasFocus = false;
   selections: SMArea[] = [];
@@ -182,13 +98,21 @@ export class SelectionManager {
     };
   }
 
+  patches: StatePatch[] = [];
+
   onUpdate() {
     const nextState = this.getState();
 
     if (this.controlled) {
       // revert the state if it is controlled
       this.setState(this.prevState);
-      this.requestedStateListeners.forEach((listener) => listener(nextState));
+      const patch = createPatches(this.prevState, nextState);
+      this.patches.push(...patch);
+
+      const batchedNextState = applyPatches(this.prevState, this.patches);
+      this.requestedStateListeners.forEach((listener) =>
+        listener(batchedNextState),
+      );
     } else {
       this.nextStateListeners.forEach((listener) => listener(nextState));
     }
@@ -468,7 +392,8 @@ export class SelectionManager {
     const shouldUpdate =
       this.isEditing.type !== "cell" ||
       this.isEditing.row !== row ||
-      this.isEditing.col !== col;
+      this.isEditing.col !== col ||
+      this.isEditing.initialValue !== initialValue;
 
     if (shouldUpdate) {
       this.isEditing = {
@@ -499,6 +424,9 @@ export class SelectionManager {
 
   canCellHaveFillHandle(cell: { row: number; col: number }) {
     if (!this.isSelected(cell)) {
+      return false;
+    }
+    if (this.isEditing.type !== "none") {
       return false;
     }
 
@@ -2762,10 +2690,6 @@ export class SelectionManager {
           if (this.isSelecting.eventType === "shrink") {
             this.deselectArea(fillHandleBaseSelection);
             this.selections.push(this.isSelecting);
-            console.log("clear", {
-              fillHandleBaseSelection,
-              currentSelection: structuredClone(this.isSelecting),
-            });
             const rangeToClear = this.difference(
               fillHandleBaseSelection,
               this.isSelecting,
@@ -2817,7 +2741,8 @@ export class SelectionManager {
       this.mouseUp();
     };
     const onMouseDown = (ev: MouseEvent) => {
-      if (el.contains(ev.target as Node)) {
+      const focus = el.contains(ev.target as Node);
+      if (focus) {
         this.focus();
       } else {
         this.blur();
@@ -2881,26 +2806,18 @@ export class SelectionManager {
           textarea.style.left = "0";
           textarea.style.right = "0";
           textarea.style.bottom = "0";
-          textarea.style.width = "0";
-          textarea.style.height = "0";
           textarea.style.opacity = "0";
           textarea.style.pointerEvents = "none";
           textarea.style.zIndex = "-1";
-          textarea.dataset.name = "selection-manager-input-capture";
+          textarea.name = "selection-manager-input-capture";
           textarea.tabIndex = -1;
           document.body.appendChild(textarea);
-          textarea.focus({
-            preventScroll: true,
-          });
-          textarea.addEventListener("blur", () => {
-            textarea.focus({
-              preventScroll: true,
-            });
-          });
+
           textarea.setAttribute("autocomplete", "off");
           textarea.setAttribute("autocorrect", "off");
           textarea.setAttribute("autocapitalize", "off");
           textarea.setAttribute("spellcheck", "false");
+          textarea.autofocus = true;
           textarea.addEventListener("beforeinput", (e) => {
             e.preventDefault();
             if (e.inputType === "insertText") {
@@ -2923,7 +2840,14 @@ export class SelectionManager {
             }
             textarea.value = "";
           });
+          const onKeyDown = () => {
+            textarea.focus({
+              preventScroll: true,
+            });
+          };
+          window.addEventListener("keydown", onKeyDown);
           return () => {
+            window.removeEventListener("keydown", onKeyDown);
             document.body.removeChild(textarea);
           };
         }
@@ -2986,6 +2910,7 @@ export class SelectionManager {
       }
     }
     el.focus();
+    el.selectionStart = el.selectionEnd = el.value.length;
     return () => {
       el.removeEventListener("blur", onBlur);
       el.removeEventListener("keydown", onKeyDown);

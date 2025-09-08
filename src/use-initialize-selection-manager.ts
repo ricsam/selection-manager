@@ -1,10 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import {
-  SelectionManager,
-  type SelectionManagerState,
-  type SMArea,
-  type MaybeInfNumber,
-} from "./selection-manager";
+import { SelectionManager } from "./selection-manager";
+import type { SelectionManagerState, SMArea, MaybeInfNumber } from "./types";
 
 const useIsomorphicLayoutEffect =
   typeof window === "undefined" ? useEffect : useLayoutEffect;
@@ -61,6 +57,7 @@ export function useInitializeSelectionManager(props: {
 
   if (props.state) {
     selectionManager.controlled = true;
+    selectionManager.patches = [];
     selectionManager.setState(props.state);
   } else {
     selectionManager.controlled = false;
