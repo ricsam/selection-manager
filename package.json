@@ -3,7 +3,7 @@
   "module": "src/lib.ts",
   "types": "src/lib.ts",
   "type": "module",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "devDependencies": {
     "@types/bun": "latest",
     "react": "^19.1.0",

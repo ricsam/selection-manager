@@ -2957,9 +2957,10 @@ export class SelectionManager {
   }
 
   setupInputElement(
-    el: HTMLInputElement,
+    element: HTMLInputElement | HTMLTextAreaElement,
     cell: { rowIndex: number; colIndex: number },
   ) {
+    const el = element as HTMLInputElement; // (or HTMLTextAreaElement)
     const save = () => {
       this.saveCellValue(cell, el.value);
       this.cancelEditing();
