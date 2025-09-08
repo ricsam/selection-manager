@@ -1,5 +1,12 @@
 # @ricsam/selection-manager
 
+## 0.0.13
+
+### Patch Changes
+
+- add setupInputElement method and enable capturing arbitrary text input to trigger an edit
+  add enter/tab as aliases for arrow navigation
+
 ## 0.0.12
 
 ### Patch Changes
