@@ -75,6 +75,7 @@ export type IsEditing =
       type: "cell";
       row: number;
       col: number;
+      initialValue?: string;
     };
 
 export type SelectionManagerState = {
@@ -462,7 +463,7 @@ export class SelectionManager {
     this.onUpdate();
   }
 
-  cellDoubleClick(row: number, col: number) {
+  editCell(row: number, col: number, initialValue?: string) {
     this.willMaybeUpdate();
     const shouldUpdate =
       this.isEditing.type !== "cell" ||
@@ -474,6 +475,7 @@ export class SelectionManager {
         type: "cell",
         row,
         col,
+        initialValue,
       };
       this.onUpdate();
     }
@@ -1912,7 +1914,7 @@ export class SelectionManager {
     if (event.key === "F2") {
       const cell = this.getTopLeftCellInSelection();
       if (cell) {
-        this.cellDoubleClick(cell.row, cell.col);
+        this.editCell(cell.row, cell.col);
       }
       return;
     }
@@ -2466,9 +2468,7 @@ export class SelectionManager {
       const htmlEl = e.target as HTMLElement;
       const fillHandleBaseSelection = this.getFillHandleBaseSelection();
       const isFillHandle =
-        !!fillHandleBaseSelection &&
-        (htmlEl.hasAttribute("data-fill-handle") ||
-          htmlEl.querySelector("[data-fill-handle]") !== null);
+        !!fillHandleBaseSelection && htmlEl.hasAttribute("data-fill-handle");
       this.cellMouseDown(cell.row, cell.col, {
         shiftKey: e.shiftKey,
         ctrlKey: e.ctrlKey,
@@ -2481,7 +2481,7 @@ export class SelectionManager {
     };
 
     const onDoubleClick = (e: MouseEvent) => {
-      this.cellDoubleClick(cell.row, cell.col);
+      this.editCell(cell.row, cell.col);
     };
     el.addEventListener("mousedown", onMouseDown);
     el.addEventListener("mouseenter", onMouseEnter);
@@ -2665,7 +2665,7 @@ export class SelectionManager {
    * Computes the practical difference between two areas for spreadsheet operations.
    * Returns the rectangular area that represents the "new" part when extending from b to a,
    * or the "removed" part when shrinking from a to b.
-   * 
+   *
    * For fill operations:
    * - extend: difference(newSelection, seedSelection) = new cells to fill
    * - shrink: difference(seedSelection, newSelection) = cells to clear
@@ -2683,36 +2683,50 @@ export class SelectionManager {
 
     // For spreadsheet fill operations, we want the rectangular difference
     // This handles the most common cases for extend/shrink operations
-    
+
     // If A extends beyond B vertically (bottom extension/shrink)
-    if (aMaxRow.type === "number" && bMaxRow.type === "number" && 
-        aMaxRow.value > bMaxRow.value && aMinRow <= bMaxRow.value) {
+    if (
+      aMaxRow.type === "number" &&
+      bMaxRow.type === "number" &&
+      aMaxRow.value > bMaxRow.value &&
+      aMinRow <= bMaxRow.value
+    ) {
       return {
         start: { row: bMaxRow.value + 1, col: Math.min(aMinCol, bMinCol) },
         end: { row: aMaxRow, col: this.maxMaybeInf(aMaxCol, bMaxCol) },
       };
     }
-    
-    // If A extends beyond B horizontally (right extension/shrink)  
-    if (aMaxCol.type === "number" && bMaxCol.type === "number" &&
-        aMaxCol.value > bMaxCol.value && aMinCol <= bMaxCol.value) {
+
+    // If A extends beyond B horizontally (right extension/shrink)
+    if (
+      aMaxCol.type === "number" &&
+      bMaxCol.type === "number" &&
+      aMaxCol.value > bMaxCol.value &&
+      aMinCol <= bMaxCol.value
+    ) {
       return {
         start: { row: Math.min(aMinRow, bMinRow), col: bMaxCol.value + 1 },
         end: { row: this.maxMaybeInf(aMaxRow, bMaxRow), col: aMaxCol },
       };
     }
-    
+
     // If B extends beyond A (shrink case - return the area being removed)
-    if (bMaxRow.type === "number" && aMaxRow.type === "number" && 
-        bMaxRow.value > aMaxRow.value) {
+    if (
+      bMaxRow.type === "number" &&
+      aMaxRow.type === "number" &&
+      bMaxRow.value > aMaxRow.value
+    ) {
       return {
         start: { row: aMaxRow.value + 1, col: Math.min(aMinCol, bMinCol) },
         end: { row: bMaxRow, col: this.maxMaybeInf(aMaxCol, bMaxCol) },
       };
     }
-    
-    if (bMaxCol.type === "number" && aMaxCol.type === "number" &&
-        bMaxCol.value > aMaxCol.value) {
+
+    if (
+      bMaxCol.type === "number" &&
+      aMaxCol.type === "number" &&
+      bMaxCol.value > aMaxCol.value
+    ) {
       return {
         start: { row: Math.min(aMinRow, bMinRow), col: aMaxCol.value + 1 },
         end: { row: this.maxMaybeInf(aMaxRow, bMaxRow), col: bMaxCol },
@@ -2722,7 +2736,6 @@ export class SelectionManager {
     // Fallback: return the original area A (no meaningful difference)
     return a;
   }
-
 
   mouseUp() {
     this.willMaybeUpdate();
@@ -2846,6 +2859,66 @@ export class SelectionManager {
       true,
     );
 
+    const inputCaptureCleanup = this.observeStateChange(
+      (state) => state.hasFocus && state.isEditing.type === "none",
+      (focus) => {
+        if (focus) {
+          const textarea = document.createElement("textarea");
+          textarea.style.position = "fixed";
+          textarea.style.top = "0";
+          textarea.style.left = "0";
+          textarea.style.right = "0";
+          textarea.style.bottom = "0";
+          textarea.style.width = "0";
+          textarea.style.height = "0";
+          textarea.style.opacity = "0";
+          textarea.style.pointerEvents = "none";
+          textarea.style.zIndex = "-1";
+          textarea.dataset.name = "selection-manager-input-capture";
+          textarea.tabIndex = -1;
+          document.body.appendChild(textarea);
+          textarea.focus({
+            preventScroll: true,
+          });
+          textarea.addEventListener("blur", () => {
+            textarea.focus({
+              preventScroll: true,
+            });
+          });
+          textarea.setAttribute("autocomplete", "off");
+          textarea.setAttribute("autocorrect", "off");
+          textarea.setAttribute("autocapitalize", "off");
+          textarea.setAttribute("spellcheck", "false");
+          textarea.addEventListener("beforeinput", (e) => {
+            e.preventDefault();
+            if (e.inputType === "insertText") {
+              if (e.data) {
+                const cell = this.getTopLeftCellInSelection();
+                if (cell) {
+                  this.editCell(cell.row, cell.col, e.data);
+                }
+              }
+            }
+            textarea.value = "";
+          });
+          textarea.addEventListener("compositionend", (e) => {
+            e.preventDefault();
+            if (e.data) {
+              const cell = this.getTopLeftCellInSelection();
+              if (cell) {
+                this.editCell(cell.row, cell.col, e.data);
+              }
+            }
+            textarea.value = "";
+          });
+          return () => {
+            document.body.removeChild(textarea);
+          };
+        }
+      },
+      true,
+    );
+
     window.addEventListener("mouseup", onMouseUp);
     window.addEventListener("mousedown", onMouseDown);
     window.addEventListener("keydown", onKeyDown);
@@ -2867,6 +2940,42 @@ export class SelectionManager {
       el.removeEventListener("mouseleave", handleMouseLeave);
       boxShadowCleanup();
       selectionCleanup();
+      inputCaptureCleanup();
+    };
+  }
+
+  setupInputElement(
+    el: HTMLInputElement,
+    cell: { rowIndex: number; colIndex: number },
+  ) {
+    const save = () => {
+      this.saveCellValue(cell, el.value);
+      this.cancelEditing();
+    };
+    const onBlur = () => {
+      save();
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        save();
+      }
+    };
+    el.addEventListener("blur", onBlur);
+    el.addEventListener("keydown", onKeyDown);
+
+    if (
+      this.isEditing.type === "cell" &&
+      this.isEditing.row === cell.rowIndex &&
+      this.isEditing.col === cell.colIndex
+    ) {
+      if (this.isEditing.initialValue) {
+        el.value = this.isEditing.initialValue;
+      }
+    }
+    el.focus();
+    return () => {
+      el.removeEventListener("blur", onBlur);
+      el.removeEventListener("keydown", onKeyDown);
     };
   }
 }

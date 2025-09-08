@@ -258,14 +258,14 @@ describe("SelectionManager Extended Tests", () => {
 
   describe("Editing", () => {
     it("should enter edit mode on double click", () => {
-      selectionManager.cellDoubleClick(2, 3);
+      selectionManager.editCell(2, 3);
 
       expect(selectionManager.isEditingCell(2, 3)).toBe(true);
       expect(selectionManager.isEditing.type).toBe("cell");
     });
 
     it("should cancel editing", () => {
-      selectionManager.cellDoubleClick(2, 3);
+      selectionManager.editCell(2, 3);
       expect(selectionManager.isEditingCell(2, 3)).toBe(true);
 
       selectionManager.cancelEditing();
@@ -293,7 +293,7 @@ describe("SelectionManager Extended Tests", () => {
     });
 
     it("should not handle other keys when editing", () => {
-      selectionManager.cellDoubleClick(2, 3);
+      selectionManager.editCell(2, 3);
       
       const preventDefault = mock();
       selectionManager.handleKeyDown({

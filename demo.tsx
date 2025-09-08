@@ -161,13 +161,18 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
         col,
       });
       const boxShadow = selectionManager.getCellBoxShadow({ row, col });
-      const isEditing = selectionManager.isEditingCell(row, col);
+      const isEditing = selectionManager.isEditing;
       const canHaveFillHandle = selectionManager.canCellHaveFillHandle({
         row,
         col,
       });
 
       const value = values[`${row},${col}`] ?? `${row},${col}`;
+
+      const save = (value: string) => {
+        selectionManager.saveCellValue({ rowIndex: row, colIndex: col }, value);
+        selectionManager.cancelEditing();
+      };
 
       return (
         <div
@@ -202,9 +207,11 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
             })
           }
           onMouseEnter={() => selectionManager.cellMouseEnter(row, col)}
-          onDoubleClick={(e) => selectionManager.cellDoubleClick(row, col)}
+          onDoubleClick={(e) => selectionManager.editCell(row, col)}
         >
-          {isEditing ? (
+          {isEditing.type === "cell" &&
+          isEditing.row === row &&
+          isEditing.col === col ? (
             <input
               style={{
                 width: "100%",
@@ -214,19 +221,17 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
                 backgroundColor: "transparent",
               }}
               type="text"
-              value={value}
-              autoFocus
+              defaultValue={isEditing.initialValue ?? value}
+              onBlur={(e) => save(e.currentTarget.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
-                  selectionManager.cancelEditing();
+                  save(e.currentTarget.value);
                 }
               }}
-              onBlur={() => selectionManager.cancelEditing()}
-              onChange={(e) => {
-                setValues((prev) => ({
-                  ...prev,
-                  [`${row},${col}`]: e.target.value,
-                }));
+              ref={(el) => {
+                if (el) {
+                  el.focus();
+                }
               }}
             />
           ) : (
@@ -375,7 +380,10 @@ function Test3() {
       selections: [
         {
           start: { row: 0, col: 0 },
-          end: { row: { type: "number", value: 1 }, col: { type: "number", value: 7 } },
+          end: {
+            row: { type: "number", value: 1 },
+            col: { type: "number", value: 7 },
+          },
         },
       ],
       hasFocus: false,
@@ -484,7 +492,15 @@ function Test5() {
   );
   const [fullyControlledState, setFullyControlledState] =
     useState<SelectionManagerState>({
-      selections: [{ start: { row: 3, col: 3 }, end: { row: { type: "number", value: 3 }, col: { type: "number", value: 3 } } }],
+      selections: [
+        {
+          start: { row: 3, col: 3 },
+          end: {
+            row: { type: "number", value: 3 },
+            col: { type: "number", value: 3 },
+          },
+        },
+      ],
       hasFocus: false,
       isSelecting: { type: "none" },
       isEditing: { type: "none" },
@@ -513,7 +529,13 @@ function Test5() {
         onClick={() =>
           setFullyControlledState({
             selections: [
-              { start: { row: 0, col: 0 }, end: { row: { type: "number", value: 7 }, col: { type: "number", value: 7 } } },
+              {
+                start: { row: 0, col: 0 },
+                end: {
+                  row: { type: "number", value: 7 },
+                  col: { type: "number", value: 7 },
+                },
+              },
             ],
             hasFocus: false,
             isSelecting: { type: "none" },
@@ -529,7 +551,13 @@ function Test5() {
         onClick={() =>
           setFullyControlledState({
             selections: [
-              { start: { row: 2, col: 2 }, end: { row: { type: "number", value: 5 }, col: { type: "number", value: 5 } } },
+              {
+                start: { row: 2, col: 2 },
+                end: {
+                  row: { type: "number", value: 5 },
+                  col: { type: "number", value: 5 },
+                },
+              },
             ],
             hasFocus: false,
             isSelecting: { type: "none" },
@@ -569,15 +597,29 @@ const CellComponent = React.memo(
     row,
     col,
     selectionManager,
+    value,
   }: {
     row: number;
     col: number;
     selectionManager: SelectionManager;
+    value: string;
   }) => {
     const cellRef = useCallback(
       (el: HTMLElement | null) => {
         if (el) {
           return selectionManager.setupCellElement(el, { row, col });
+        }
+      },
+      [row, col, selectionManager],
+    );
+
+    const inputRef = useCallback(
+      (el: HTMLInputElement | null) => {
+        if (el) {
+          return selectionManager.setupInputElement(el, {
+            rowIndex: row,
+            colIndex: col,
+          });
         }
       },
       [row, col, selectionManager],
@@ -590,8 +632,6 @@ const CellComponent = React.memo(
     const canHaveFillHandle = useSelectionManager(selectionManager, () => {
       return selectionManager.canCellHaveFillHandle({ row, col });
     });
-
-    const [value, setValue] = useState<string>(`${row},${col}`);
 
     return (
       <div
@@ -619,15 +659,8 @@ const CellComponent = React.memo(
               outline: "none",
               backgroundColor: "transparent",
             }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                selectionManager.cancelEditing();
-              }
-            }}
-            onBlur={() => selectionManager.cancelEditing()}
-            onChange={(e) => setValue(e.target.value)}
-            value={value}
-            autoFocus
+            ref={inputRef}
+            defaultValue={value}
           />
         ) : (
           value
@@ -734,6 +767,19 @@ function Test6() {
     containerElement,
   });
 
+  const [values, setValues] = useState<Record<string, string>>({});
+
+  React.useEffect(() => {
+    return selectionManager.listenToUpdateData((data) => {
+      data.forEach(({ rowIndex, colIndex, value }) => {
+        setValues((prev) => ({
+          ...prev,
+          [`${rowIndex},${colIndex}`]: value,
+        }));
+      });
+    });
+  }, [selectionManager]);
+
   React.useEffect(() => {
     return selectionManager.listenToFill((ev) => {
       console.log("fillArea", ev);
@@ -775,6 +821,7 @@ function Test6() {
             row={row}
             col={col}
             selectionManager={selectionManager}
+            value={values[`${row},${col}`] ?? `${row},${col}`}
           />,
         );
       }
