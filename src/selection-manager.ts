@@ -10,7 +10,7 @@ import type {
   SMArea,
   StatePatch,
 } from "./types";
-import { parseCSVContent } from "./utils";
+import { parseCSVContent, type Format } from "./utils";
 
 type KeyboardEvent = {
   key: string;
@@ -46,6 +46,7 @@ export class SelectionManager {
     public getNumRows: () => MaybeInfNumber,
     public getNumCols: () => MaybeInfNumber,
     public getGroups: () => SMArea[],
+    private readonly formats: Format[] = ["csv", "tsv"],
   ) {}
 
   getState(): SelectionManagerState {
@@ -2575,7 +2576,7 @@ export class SelectionManager {
     content: string,
     startPosition?: { row: number; col: number },
   ) {
-    const data = parseCSVContent(content);
+    const data = parseCSVContent(content, this.formats);
     const updates: { value: string; rowIndex: number; colIndex: number }[] = [];
 
     // Get starting position for paste

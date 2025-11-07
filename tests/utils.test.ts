@@ -364,4 +364,93 @@ describe("parseCSVContent", () => {
       ]);
     });
   });
+
+  describe("format support", () => {
+    test("should force CSV parsing when csv format is specified", () => {
+      // Even though "1,234" looks like a formatted number, CSV format should force CSV parsing
+      const content = "1,234,5,678";
+      const result = parseCSVContent(content, ["csv"]);
+      expect(result).toEqual([
+        { rowIndex: 0, colIndex: 0, value: "1" },
+        { rowIndex: 0, colIndex: 1, value: "234" },
+        { rowIndex: 0, colIndex: 2, value: "5" },
+        { rowIndex: 0, colIndex: 3, value: "678" },
+      ]);
+    });
+
+    test("should force TSV parsing when tsv format is specified", () => {
+      const content = "a\tb\tc\n1\t2\t3";
+      const result = parseCSVContent(content, ["tsv"]);
+      expect(result).toEqual([
+        { rowIndex: 0, colIndex: 0, value: "a" },
+        { rowIndex: 0, colIndex: 1, value: "b" },
+        { rowIndex: 0, colIndex: 2, value: "c" },
+        { rowIndex: 1, colIndex: 0, value: "1" },
+        { rowIndex: 1, colIndex: 1, value: "2" },
+        { rowIndex: 1, colIndex: 2, value: "3" },
+      ]);
+    });
+
+    test("should prefer TSV over CSV when both formats are specified", () => {
+      // Content with both tabs and commas - should use tabs when both formats specified
+      const content = "a,b\tc,d\te,f";
+      const result = parseCSVContent(content, ["csv", "tsv"]);
+      expect(result).toEqual([
+        { rowIndex: 0, colIndex: 0, value: "a,b" },
+        { rowIndex: 0, colIndex: 1, value: "c,d" },
+        { rowIndex: 0, colIndex: 2, value: "e,f" },
+      ]);
+    });
+
+    test("should auto-detect when formats array is empty", () => {
+      // Should treat formatted numbers as single cells when no format specified
+      const content = "1,234\n5,678";
+      const result = parseCSVContent(content, []);
+      expect(result).toEqual([
+        { rowIndex: 0, colIndex: 0, value: "1,234" },
+        { rowIndex: 1, colIndex: 0, value: "5,678" },
+      ]);
+    });
+
+    test("should auto-detect when formats parameter is omitted", () => {
+      // Should treat formatted numbers as single cells when format not specified
+      const content = "1,234\n5,678";
+      const result = parseCSVContent(content);
+      expect(result).toEqual([
+        { rowIndex: 0, colIndex: 0, value: "1,234" },
+        { rowIndex: 1, colIndex: 0, value: "5,678" },
+      ]);
+    });
+
+    test("should parse CSV with quoted values when csv format is specified", () => {
+      const content = '"hello, world",test\n"simple",another';
+      const result = parseCSVContent(content, ["csv"]);
+      expect(result).toEqual([
+        { rowIndex: 0, colIndex: 0, value: "hello, world" },
+        { rowIndex: 0, colIndex: 1, value: "test" },
+        { rowIndex: 1, colIndex: 0, value: "simple" },
+        { rowIndex: 1, colIndex: 1, value: "another" },
+      ]);
+    });
+
+    test("should parse TSV with quoted values when tsv format is specified", () => {
+      const content = 'value1\t"value\twith\ttabs"\tvalue3';
+      const result = parseCSVContent(content, ["tsv"]);
+      expect(result).toEqual([
+        { rowIndex: 0, colIndex: 0, value: "value1" },
+        { rowIndex: 0, colIndex: 1, value: "value\twith\ttabs" },
+        { rowIndex: 0, colIndex: 2, value: "value3" },
+      ]);
+    });
+
+    test("should skip formatted number detection when csv format is specified", () => {
+      // Single formatted number should be parsed as CSV when format is specified
+      const content = "1,234";
+      const result = parseCSVContent(content, ["csv"]);
+      expect(result).toEqual([
+        { rowIndex: 0, colIndex: 0, value: "1" },
+        { rowIndex: 0, colIndex: 1, value: "234" },
+      ]);
+    });
+  });
 });

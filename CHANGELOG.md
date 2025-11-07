@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.19
+
+### Patch Changes
+
+- add formats option for pasted / drag-n-dropped data
+
 ## 0.0.18
 
 ### Patch Changes

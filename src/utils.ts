@@ -4,10 +4,13 @@ export type CellData = {
   value: string;
 };
 
+export type Format = 'csv' | 'tsv';
+
 // CSV/TSV parsing utilities
-export const parseCSVLine = (line: string): string[] => {
+export const parseCSVLine = (line: string, delimiter?: string): string[] => {
   // Auto-detect delimiter: if line contains tabs, use tab; otherwise use comma
-  const delimiter = line.includes('\t') ? '\t' : ',';
+  // Or use provided delimiter if specified
+  const actualDelimiter = delimiter ?? (line.includes('\t') ? '\t' : ',');
   
   // First, identify all quote-protected ranges
   const protectedRanges: Array<{start: number, end: number}> = [];
@@ -45,7 +48,7 @@ export const parseCSVLine = (line: string): string[] => {
   for (let pos = 0; pos < line.length; pos++) {
     const char = line[pos];
     
-    if (char === delimiter) {
+    if (char === actualDelimiter) {
       // Check if this delimiter is protected
       const isProtected = protectedRanges.some(range => 
         pos > range.start && pos < range.end
@@ -137,9 +140,19 @@ const parseFormattedNumbers = (line: string): string[] => {
 };
 
 // Enhanced parsing that handles CSV, TSV, and space-separated values
-const parseDelimitedLine = (line: string): string[] => {
+const parseDelimitedLine = (line: string, formats?: Format[]): string[] => {
+  // If formats are specified, use them to guide parsing
+  if (formats && formats.length > 0) {
+    // Prefer TSV over CSV if both are present
+    if (formats.includes('tsv')) {
+      return parseCSVLine(line, '\t');
+    } else if (formats.includes('csv')) {
+      // When CSV format is explicitly specified, parse as CSV (don't treat as formatted numbers)
+      return parseCSVLine(line, ',');
+    }
+  }
+  
   // Auto-detect delimiter: prefer tabs > commas > spaces
-
   if (line.includes("\t")) {
     // Tab-separated - use tab delimiter
     return parseCSVLine(line);
@@ -200,25 +213,31 @@ const isSingleFormattedNumber = (content: string): boolean => {
   return isNumberWithCommas(line) || isNumberWithSpaces(line);
 };
 
-export const parseCSVContent = (content: string): CellData[] => {
+export const parseCSVContent = (content: string, formats: Format[] = []): CellData[] => {
   const lines = content.split(/\r?\n/);
   const nonEmptyLines = lines.filter((line) => line.trim());
 
   const cellData: CellData[] = [];
 
   // Special case: if entire content is a single formatted number, treat as one cell
-  if (isSingleFormattedNumber(content)) {
-    cellData.push({
-      rowIndex: 0,
-      colIndex: 0,
-      value: content.trim(),
-    });
-    return cellData;
+  // Skip this if formats are explicitly specified (user wants CSV/TSV parsing)
+  if (!formats || formats.length === 0) {
+    if (isSingleFormattedNumber(content)) {
+      cellData.push({
+        rowIndex: 0,
+        colIndex: 0,
+        value: content.trim(),
+      });
+      return cellData;
+    }
   }
 
   // Check if all non-empty lines look like numbers with comma separators
+  // Skip this if formats are explicitly specified (user wants CSV/TSV parsing)
   const allLookLikeNumbers =
-    nonEmptyLines.length > 0 && nonEmptyLines.every(isNumberWithCommas);
+    (!formats || formats.length === 0) &&
+    nonEmptyLines.length > 0 &&
+    nonEmptyLines.every(isNumberWithCommas);
 
   if (allLookLikeNumbers) {
     // Treat each line as a single cell (number with commas)
@@ -236,7 +255,7 @@ export const parseCSVContent = (content: string): CellData[] => {
   } else {
     // Use normal CSV/TSV/space-separated parsing, preserving original row structure
     lines.forEach((line, rowIndex) => {
-      const parsedLine = parseDelimitedLine(line);
+      const parsedLine = parseDelimitedLine(line, formats);
       // Only process rows that have at least one non-empty cell
       if (parsedLine.some((cell) => cell.trim() !== "")) {
         parsedLine.forEach((cellValue, colIndex) => {
