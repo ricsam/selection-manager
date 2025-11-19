@@ -385,8 +385,8 @@ describe("SelectionManager Advanced Tests", () => {
     });
 
     it("should handle paste and drop operations", () => {
-      const updateCallback = mock();
-      selectionManager.listenToUpdateData(updateCallback);
+      const onPasteCallback = mock();
+      selectionManager.listenToPaste(onPasteCallback);
       
       selectionManager.focus();
       selectionManager.cellMouseDown(0, 0, {
@@ -408,7 +408,7 @@ describe("SelectionManager Advanced Tests", () => {
       selectionManager.handlePaste(mockClipboardEvent);
 
       expect(mockClipboardEvent.preventDefault).toHaveBeenCalled();
-      expect(updateCallback).toHaveBeenCalled();
+      expect(onPasteCallback).toHaveBeenCalled();
     });
 
     it("should handle drag and drop files", () => {

@@ -75,6 +75,11 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
       });
     }, [selectionManager, values]);
 
+    React.useEffect(() => {
+      selectionManager.listenToPaste((updates) => {
+        selectionManager.saveCellValues(updates);
+      });
+    }, [selectionManager]);
     const renderCornerCell = () => {
       return (
         <div

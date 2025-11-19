@@ -12,6 +12,8 @@ import type {
 } from "./types";
 import { parseCSVContent, type Format } from "./utils";
 
+type Update = { rowIndex: number; colIndex: number; value: string };
+
 type KeyboardEvent = {
   key: string;
   shiftKey: boolean;
@@ -2166,7 +2168,7 @@ export class SelectionManager {
   }
 
   clearSelectedCells() {
-    const updates: { rowIndex: number; colIndex: number; value: string }[] = [];
+    const updates: Update[] = [];
     this.getNonOverlappingSelections().forEach((selection) => {
       const cells = this.getCellsWithData(selection);
       cells.forEach((cell) => {
@@ -2252,14 +2254,18 @@ export class SelectionManager {
     };
   }
 
-  private listenToUpdateDataListeners: ((
-    updates: { rowIndex: number; colIndex: number; value: string }[],
-  ) => void)[] = [];
-  listenToUpdateData(
-    callback: (
-      data: { rowIndex: number; colIndex: number; value: string }[],
-    ) => void,
-  ) {
+  private listenToPasteListeners: ((updates: Update[]) => void)[] = [];
+  listenToPaste(callback: (updates: Update[]) => void) {
+    this.listenToPasteListeners.push(callback);
+    return () => {
+      this.listenToPasteListeners = this.listenToPasteListeners.filter(
+        (l) => l !== callback,
+      );
+    };
+  }
+
+  private listenToUpdateDataListeners: ((updates: Update[]) => void)[] = [];
+  listenToUpdateData(callback: (data: Update[]) => void) {
     this.listenToUpdateDataListeners.push(callback);
     return () => {
       this.listenToUpdateDataListeners =
@@ -2287,9 +2293,7 @@ export class SelectionManager {
     });
   }
 
-  public saveCellValues(
-    updates: { rowIndex: number; colIndex: number; value: string }[],
-  ) {
+  public saveCellValues(updates: Update[]) {
     this.listenToUpdateDataListeners.forEach((listener) => {
       listener(updates);
     });
@@ -2572,12 +2576,12 @@ export class SelectionManager {
     };
   }
 
-  private insertParsedData(
+  private getUpdatesForApplyingParsedData(
     content: string,
     startPosition?: { row: number; col: number },
-  ) {
+  ): Update[] {
     const data = parseCSVContent(content, this.formats);
-    const updates: { value: string; rowIndex: number; colIndex: number }[] = [];
+    const updates: Update[] = [];
 
     // Get starting position for paste
     const firstCell = startPosition ??
@@ -2607,8 +2611,7 @@ export class SelectionManager {
         colIndex: targetCol,
       });
     });
-
-    this.listenToUpdateDataListeners.forEach((listener) => listener(updates));
+    return updates;
   }
 
   handleDrop(ev: DragEvent) {
@@ -2627,7 +2630,8 @@ export class SelectionManager {
       const content = event.target?.result as string;
       if (!content) return;
 
-      this.insertParsedData(content);
+      const updates = this.getUpdatesForApplyingParsedData(content);
+      this.saveCellValues(updates);
     };
 
     reader.readAsText(file);
@@ -2643,7 +2647,8 @@ export class SelectionManager {
     const text = ev.clipboardData?.getData("text/plain");
     if (!text) return;
 
-    this.insertParsedData(text);
+    const updates = this.getUpdatesForApplyingParsedData(text);
+    this.listenToPasteListeners.forEach((listener) => listener(updates));
   }
 
   /**

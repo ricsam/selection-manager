@@ -379,6 +379,15 @@ function EditableSpreadsheet() {
     });
   }, [data, selectionManager]);
 
+  // 📋 Handle paste operations - REQUIRED for paste to work!
+  useEffect(() => {
+    return selectionManager.listenToPaste((updates) => {
+      // The clipboard content has been parsed and positioned at the current selection
+      // You must save these updates to make paste work:
+      selectionManager.saveCellValues(updates);
+    });
+  }, [selectionManager]);
+
   // 📝 Handle data updates (from cell editing, paste, etc.)
   useEffect(() => {
     return selectionManager.listenToUpdateData((updates) => {
@@ -1020,6 +1029,14 @@ const unsubscribeCopy = selectionManager.listenToCopy(() => {
   console.log("User copied/cut data");
 });
 
+// 📋 Listen for paste operations - REQUIRED for paste to work!
+const unsubscribePaste = selectionManager.listenToPaste((updates) => {
+  // updates: Array<{ rowIndex: number; colIndex: number; value: string }>
+  // The clipboard content has been parsed and positioned at the current selection
+  // You must handle these updates, typically by saving them:
+  selectionManager.saveCellValues(updates);
+});
+
 const unsubscribeData = selectionManager.listenToUpdateData((data) => {
   console.log("Data updated:", data);
   // data: Array<{ rowIndex: number; colIndex: number; value: string }>
@@ -1050,6 +1067,7 @@ selectionManager.saveCellValues([
 
 // 🧹 Clean up when done
 unsubscribeCopy();
+unsubscribePaste();
 unsubscribeData();
 unsubscribeFill();
 ```

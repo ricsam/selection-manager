@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.20
+
+### Patch Changes
+
+- make paste handling explicit
+
 ## 0.0.19
 
 ### Patch Changes
