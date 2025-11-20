@@ -1,6 +1,8 @@
 import { applyPatches, createPatches } from "./patches";
 import type {
+  CellDataUpdate,
   FillEvent,
+  GenericKeyboardEvent,
   IsEditing,
   IsHovering,
   IsSelecting,
@@ -12,15 +14,6 @@ import type {
 } from "./types";
 import { parseCSVContent, type Format } from "./utils";
 
-type Update = { rowIndex: number; colIndex: number; value: string };
-
-type KeyboardEvent = {
-  key: string;
-  shiftKey: boolean;
-  ctrlKey: boolean;
-  metaKey: boolean;
-  preventDefault: () => void;
-};
 const sort = (a: number | "INF", b: number | "INF"): number => {
   if (a === b) {
     return 0;
@@ -1763,7 +1756,7 @@ export class SelectionManager {
     return result;
   }
 
-  handleKeyDown(event: KeyboardEvent) {
+  handleKeyDown(event: GenericKeyboardEvent) {
     this.willMaybeUpdate();
     // handle escape key
     if (event.key === "Escape") {
@@ -2168,7 +2161,7 @@ export class SelectionManager {
   }
 
   clearSelectedCells() {
-    const updates: Update[] = [];
+    const updates: CellDataUpdate[] = [];
     this.getNonOverlappingSelections().forEach((selection) => {
       const cells = this.getCellsWithData(selection);
       cells.forEach((cell) => {
@@ -2254,8 +2247,8 @@ export class SelectionManager {
     };
   }
 
-  private listenToPasteListeners: ((updates: Update[]) => void)[] = [];
-  listenToPaste(callback: (updates: Update[]) => void) {
+  private listenToPasteListeners: ((updates: CellDataUpdate[]) => void)[] = [];
+  listenToPaste(callback: (updates: CellDataUpdate[]) => void) {
     this.listenToPasteListeners.push(callback);
     return () => {
       this.listenToPasteListeners = this.listenToPasteListeners.filter(
@@ -2264,8 +2257,9 @@ export class SelectionManager {
     };
   }
 
-  private listenToUpdateDataListeners: ((updates: Update[]) => void)[] = [];
-  listenToUpdateData(callback: (data: Update[]) => void) {
+  private listenToUpdateDataListeners: ((updates: CellDataUpdate[]) => void)[] =
+    [];
+  listenToUpdateData(callback: (data: CellDataUpdate[]) => void) {
     this.listenToUpdateDataListeners.push(callback);
     return () => {
       this.listenToUpdateDataListeners =
@@ -2293,7 +2287,7 @@ export class SelectionManager {
     });
   }
 
-  public saveCellValues(updates: Update[]) {
+  public saveCellValues(updates: CellDataUpdate[]) {
     this.listenToUpdateDataListeners.forEach((listener) => {
       listener(updates);
     });
@@ -2579,9 +2573,9 @@ export class SelectionManager {
   private getUpdatesForApplyingParsedData(
     content: string,
     startPosition?: { row: number; col: number },
-  ): Update[] {
+  ): CellDataUpdate[] {
     const data = parseCSVContent(content, this.formats);
-    const updates: Update[] = [];
+    const updates: CellDataUpdate[] = [];
 
     // Get starting position for paste
     const firstCell = startPosition ??
@@ -2800,7 +2794,7 @@ export class SelectionManager {
         this.blur();
       }
     };
-    const onKeyDown = (ev: KeyboardEvent) => {
+    const onKeyDown = (ev: GenericKeyboardEvent) => {
       if (this.hasFocus) {
         this.handleKeyDown(ev);
       }
@@ -2946,7 +2940,7 @@ export class SelectionManager {
     const onBlur = () => {
       save();
     };
-    const onKeyDown = (e: KeyboardEvent) => {
+    const onKeyDown = (e: GenericKeyboardEvent) => {
       if (e.key === "Enter") {
         save();
       } else if (e.key === "Tab") {

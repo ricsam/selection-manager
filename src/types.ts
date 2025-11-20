@@ -14,14 +14,6 @@ export type SMArea = {
   };
 };
 
-type KeyboardEvent = {
-  key: string;
-  shiftKey: boolean;
-  ctrlKey: boolean;
-  metaKey: boolean;
-  preventDefault: () => void;
-};
-
 export type FillDirection = "up" | "down" | "left" | "right";
 
 export type FillEvent =
@@ -108,7 +100,7 @@ export type SelectionManagerState = {
  * Path uses simple dot notation for nested properties and array indices
  * Examples:
  * - "hasFocus" - root property
- * - "selections" - array property  
+ * - "selections" - array property
  * - "selections/0" - first selection in array
  * - "selections/-" - append to end of array (for add operations)
  * - "isEditing.row" - nested property
@@ -133,3 +125,17 @@ export type StatePatch =
       path: string;
       value: boolean | SMArea[] | IsSelecting | IsEditing | IsHovering;
     };
+
+export type CellDataUpdate = {
+  rowIndex: number;
+  colIndex: number;
+  value: string;
+};
+
+export type GenericKeyboardEvent = {
+  key: string;
+  shiftKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  preventDefault: () => void;
+};

@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.21
+
+### Patch Changes
+
+- add disablePaste option to the useInitializeSelectionManager
+
 ## 0.0.20
 
 ### Patch Changes
