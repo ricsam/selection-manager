@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.23
+
+### Patch Changes
+
+- allow empty clipboard data to be pasted
+
 ## 0.0.22
 
 ### Patch Changes

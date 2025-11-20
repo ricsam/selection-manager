@@ -2635,8 +2635,7 @@ export class SelectionManager {
     if (!this.hasSelection()) return;
 
     ev.preventDefault();
-    const text = ev.clipboardData?.getData("text/plain");
-    if (!text) return;
+    const text = ev.clipboardData?.getData("text/plain") ?? "";
 
     const updates = this.getUpdatesForApplyingParsedData(text);
     this.listenToPasteListeners.forEach((listener) =>
