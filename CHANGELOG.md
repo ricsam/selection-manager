@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.22
+
+### Patch Changes
+
+- add raw text string in the paste event
+
 ## 0.0.21
 
 ### Patch Changes

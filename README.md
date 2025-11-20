@@ -381,7 +381,7 @@ function EditableSpreadsheet() {
 
   // 📋 Handle paste operations - REQUIRED for paste to work!
   useEffect(() => {
-    return selectionManager.listenToPaste((updates) => {
+    return selectionManager.listenToPaste(({ updates, rawString }) => {
       // The clipboard content has been parsed and positioned at the current selection
       // You must save these updates to make paste work:
       selectionManager.saveCellValues(updates);
@@ -713,6 +713,12 @@ type IsHovering =
   | { type: "cell"; row: number; col: number }          // Hovering over this cell
   | { type: "group"; group: SMArea }                    // Hovering over merged cell group
   | { type: "header"; index: number; headerType: "row" | "col" }; // Hovering over header
+
+// 📋 Paste event
+type PasteEvent = {
+  updates: Array<{ rowIndex: number; colIndex: number; value: string }>; // Parsed cell data
+  rawString: string;  // Original clipboard content before parsing
+};
 ```
 
 ### 🎨 Visual Styling Methods
@@ -1030,8 +1036,8 @@ const unsubscribeCopy = selectionManager.listenToCopy(() => {
 });
 
 // 📋 Listen for paste operations - REQUIRED for paste to work!
-const unsubscribePaste = selectionManager.listenToPaste((updates) => {
-  // updates: Array<{ rowIndex: number; colIndex: number; value: string }>
+const unsubscribePaste = selectionManager.listenToPaste(({ updates, rawString }) => {
+  // rawString: string - The original clipboard content before parsing
   // The clipboard content has been parsed and positioned at the current selection
   // You must handle these updates, typically by saving them:
   selectionManager.saveCellValues(updates);

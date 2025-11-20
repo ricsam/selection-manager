@@ -124,7 +124,12 @@ saveCellValue(cell: { rowIndex: number; colIndex: number }, value: string): void
 ```typescript
 selectionToTsv(data: Map<string, unknown>): string  // Keys format: "row,col"
 listenToCopy(callback: () => void): () => void
-listenToPaste(callback: (updates: Array<{ rowIndex: number; colIndex: number; value: string }>) => void): () => void
+listenToPaste(callback: (ev: PasteEvent) => void): () => void
+
+type PasteEvent = {
+  updates: Array<{ rowIndex: number; colIndex: number; value: string }>;
+  rawString: string;  // The original clipboard content before parsing
+}
 listenToUpdateData(callback: (data: Array<{ rowIndex: number; colIndex: number; value: string }>) => void): () => void
 saveCellValue(cell: { rowIndex: number; colIndex: number }, value: string): void
 saveCellValues(updates: Array<{ rowIndex: number; colIndex: number; value: string }>): void
@@ -276,7 +281,9 @@ selectionManager.listenToCopy((isCut) => {
 });
 
 // Paste - REQUIRED for paste to work!
-selectionManager.listenToPaste((updates) => {
+selectionManager.listenToPaste(({ updates, rawString }) => {
+  // updates: Array<{ rowIndex: number; colIndex: number; value: string }>
+  // rawString: string - The original clipboard content before parsing
   // The clipboard content has been parsed and positioned at the current selection
   // You must handle these updates, typically by saving them:
   selectionManager.saveCellValues(updates);
@@ -323,7 +330,7 @@ const exportSelection = () => {
 **⚠️ Performance Caveat**: Each cell/header MUST be its own component to get memoized callback refs. If you create callback refs in a loop or render function, they will be recreated on every render, causing constant cleanup/setup cycles and poor performance.
 
 **Data Handling Notes:**
-- **Paste requires setup**: You must call `listenToPaste()` and handle the updates (typically by calling `saveCellValues(updates)`) for paste to work. The clipboard content is automatically parsed and positioned at the current selection.
+- **Paste requires setup**: You must call `listenToPaste()` and handle the event (typically by calling `saveCellValues(ev.updates)`) for paste to work. The callback receives a `PasteEvent` with `updates` (parsed cell data) and `rawString` (original clipboard content). The clipboard content is automatically parsed and positioned at the current selection.
 - `listenToUpdateData()` fires for all data changes: cell editing, paste operations, file drops, `saveCellValue()`, `saveCellValues()`, and `clearSelectedCells()`
 - `clearSelectedCells()` automatically clears selected cells by calling `saveCellValues()` with empty strings
 - Use `saveCellValue()` for single cell updates and `saveCellValues()` for batch updates
@@ -341,7 +348,7 @@ const exportSelection = () => {
 - **Copy (Ctrl/Cmd+C)**: Triggers `listenToCopy()` callback for user handling
 - **Cut (Ctrl/Cmd+X)**: Same as copy, followed by `clearSelectedCells()` 
 - **Delete (Delete/Backspace)**: Calls `clearSelectedCells()` which triggers `listenToUpdateData()` with empty values
-- **Paste (Ctrl/Cmd+V)**: Automatically parses CSV/TSV from clipboard and triggers `listenToPaste()` callback. You must set up a `listenToPaste()` listener and handle the updates (typically by calling `saveCellValues()`) for paste to work.
+- **Paste (Ctrl/Cmd+V)**: Automatically parses CSV/TSV from clipboard and triggers `listenToPaste()` callback with a `PasteEvent` containing `updates` and `rawString`. You must set up a `listenToPaste()` listener and handle the event (typically by calling `saveCellValues(ev.updates)`) for paste to work.
 - **File Drop**: Supports dropping CSV/TSV files and triggers `listenToUpdateData()`
 - **Cell Editing**: Save operations trigger `listenToUpdateData()`
 

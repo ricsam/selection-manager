@@ -31,7 +31,7 @@ export function useInitializeSelectionManager(props: {
       selectionManager.onNewRequestedState(onStateChangeRef.current);
     }
     if (!props.disablePaste) {
-      selectionManager.listenToPaste((updates) => {
+      selectionManager.listenToPaste(({ updates }) => {
         selectionManager.saveCellValues(updates);
       });
     }

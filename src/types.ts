@@ -139,3 +139,8 @@ export type GenericKeyboardEvent = {
   metaKey: boolean;
   preventDefault: () => void;
 };
+
+export type PasteEvent = {
+  updates: CellDataUpdate[];
+  rawString: string;
+};

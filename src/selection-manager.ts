@@ -7,6 +7,7 @@ import type {
   IsHovering,
   IsSelecting,
   MaybeInfNumber,
+  PasteEvent,
   RealNumber,
   SelectionManagerState,
   SMArea,
@@ -2247,8 +2248,8 @@ export class SelectionManager {
     };
   }
 
-  private listenToPasteListeners: ((updates: CellDataUpdate[]) => void)[] = [];
-  listenToPaste(callback: (updates: CellDataUpdate[]) => void) {
+  private listenToPasteListeners: ((ev: PasteEvent) => void)[] = [];
+  listenToPaste(callback: (ev: PasteEvent) => void) {
     this.listenToPasteListeners.push(callback);
     return () => {
       this.listenToPasteListeners = this.listenToPasteListeners.filter(
@@ -2570,16 +2571,12 @@ export class SelectionManager {
     };
   }
 
-  private getUpdatesForApplyingParsedData(
-    content: string,
-    startPosition?: { row: number; col: number },
-  ): CellDataUpdate[] {
+  private getUpdatesForApplyingParsedData(content: string): CellDataUpdate[] {
     const data = parseCSVContent(content, this.formats);
     const updates: CellDataUpdate[] = [];
 
     // Get starting position for paste
-    const firstCell = startPosition ??
-      this.getTopLeftCellInSelection() ?? { row: 0, col: 0 };
+    const firstCell = this.getTopLeftCellInSelection() ?? { row: 0, col: 0 };
     const startRow = firstCell.row;
     const startCol = firstCell.col;
 
@@ -2642,7 +2639,9 @@ export class SelectionManager {
     if (!text) return;
 
     const updates = this.getUpdatesForApplyingParsedData(text);
-    this.listenToPasteListeners.forEach((listener) => listener(updates));
+    this.listenToPasteListeners.forEach((listener) =>
+      listener({ updates, rawString: text }),
+    );
   }
 
   /**
