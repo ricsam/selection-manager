@@ -2176,6 +2176,13 @@ export class SelectionManager {
     this.saveCellValues(updates);
   }
 
+  clearSelections() {
+    this.willMaybeUpdate();
+    this.selections = [];
+    this.isSelecting = { type: "none" };
+    this.onUpdate();
+  }
+
   forEachSelectedCell(
     callback: (cell: {
       /**
