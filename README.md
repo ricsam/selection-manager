@@ -339,9 +339,14 @@ function EditableSpreadsheet() {
     getNumRows: () => 20,
     getNumCols: () => 10,
     containerElement
+    // 💡 By default, auto clipboard handling is enabled (copy/cut/paste work automatically)
+    // Set disableAutoClipboard: true to handle clipboard operations manually
+    // disableAutoClipboard: true  // Uncomment to handle clipboard manually
   });
 
   // 📋 Handle copy operations like a pro
+  // Note: This example shows manual clipboard handling. 
+  // If disableAutoClipboard is false (default), you can skip this and paste handling.
   useEffect(() => {
     return selectionManager.listenToCopy((isCut) => {
       const boundingRect = selectionManager.getSelectionsBoundingRect();
@@ -380,6 +385,9 @@ function EditableSpreadsheet() {
   }, [data, selectionManager]);
 
   // 📋 Handle paste operations - REQUIRED for paste to work!
+  // Note: By default, useInitializeSelectionManager automatically handles paste.
+  // If you need custom paste handling, set disableAutoClipboard: true and handle it yourself.
+  // This example shows manual handling - you can remove this if using auto clipboard handling.
   useEffect(() => {
     return selectionManager.listenToPaste(({ updates, rawString }) => {
       // The clipboard content has been parsed and positioned at the current selection
@@ -1019,6 +1027,8 @@ writeToClipboard("Hello\tWorld\nFoo\tBar");  // TSV format
 
 ### 📋 Data Operations (Copy/Paste Magic)
 
+**💡 Auto Clipboard Handling**: By default, `useInitializeSelectionManager` automatically handles copy/cut/paste operations. Copy/cut triggers `listenToCopy()` with `cut: true` for cut and `cut: false` for copy, and automatically clears cells on cut. Paste automatically calls `saveCellValues()`. Set `disableAutoClipboard: true` to handle clipboard operations manually.
+
 ```typescript
 // 📋 Export selections as TSV
 const dataMap = new Map([
@@ -1030,12 +1040,20 @@ const dataMap = new Map([
 const tsv = selectionManager.selectionToTsv(dataMap);
 // Returns: "Hello\tWorld\n42\t🎉" (only selected cells)
 
-// 🎧 Listen for user actions
-const unsubscribeCopy = selectionManager.listenToCopy(() => {
-  console.log("User copied/cut data");
+// 🎧 Listen for user actions (only needed if disableAutoClipboard: true)
+const unsubscribeCopy = selectionManager.listenToCopy((isCut) => {
+  if (isCut) {
+    console.log("User cut data");
+    // Handle cut: copy to clipboard and clear cells
+    selectionManager.clearSelectedCells();
+  } else {
+    console.log("User copied data");
+    // Handle copy: copy to clipboard only
+  }
 });
 
 // 📋 Listen for paste operations - REQUIRED for paste to work!
+// Note: Only needed if disableAutoClipboard: true. Otherwise, paste is handled automatically.
 const unsubscribePaste = selectionManager.listenToPaste(({ updates, rawString }) => {
   // rawString: string - The original clipboard content before parsing
   // The clipboard content has been parsed and positioned at the current selection

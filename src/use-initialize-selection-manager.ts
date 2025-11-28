@@ -15,7 +15,7 @@ export function useInitializeSelectionManager(props: {
   containerElement?: HTMLElement | null;
   getGroups?: () => SMArea[];
   formats?: Format[];
-  disablePaste?: boolean;
+  disableAutoClipboard?: boolean;
 }): SelectionManager {
   const onStateChangeRef = useRef(props.onStateChange);
   const [selectionManager] = useState<SelectionManager>(() => {
@@ -30,7 +30,12 @@ export function useInitializeSelectionManager(props: {
       selectionManager.onNextState(onStateChangeRef.current);
       selectionManager.onNewRequestedState(onStateChangeRef.current);
     }
-    if (!props.disablePaste) {
+    if (!props.disableAutoClipboard) {
+      selectionManager.listenToCopy((cut) => {
+        if (cut) {
+          selectionManager.clearSelectedCells();
+        }
+      });
       selectionManager.listenToPaste(({ updates }) => {
         selectionManager.saveCellValues(updates);
       });

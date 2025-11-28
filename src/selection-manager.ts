@@ -1811,7 +1811,7 @@ export class SelectionManager {
     ) {
       if (this.hasSelection()) {
         event.preventDefault();
-        this.listenToCopyListeners.forEach((listener) => listener());
+        this.listenToCopyListeners.forEach((listener) => listener(false));
       }
       return;
     }
@@ -1822,8 +1822,7 @@ export class SelectionManager {
     ) {
       if (this.hasSelection()) {
         event.preventDefault();
-        this.listenToCopyListeners.forEach((listener) => listener());
-        this.clearSelectedCells();
+        this.listenToCopyListeners.forEach((listener) => listener(true));
       }
       return;
     }
@@ -2245,8 +2244,8 @@ export class SelectionManager {
     });
   }
 
-  private listenToCopyListeners: (() => void)[] = [];
-  listenToCopy(callback: () => void) {
+  private listenToCopyListeners: ((cut: boolean) => void)[] = [];
+  listenToCopy(callback: (cut: boolean) => void) {
     this.listenToCopyListeners.push(callback);
     return () => {
       this.listenToCopyListeners = this.listenToCopyListeners.filter(

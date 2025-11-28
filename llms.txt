@@ -123,7 +123,7 @@ saveCellValue(cell: { rowIndex: number; colIndex: number }, value: string): void
 ### Data Operations
 ```typescript
 selectionToTsv(data: Map<string, unknown>): string  // Keys format: "row,col"
-listenToCopy(callback: () => void): () => void
+listenToCopy(callback: (cut: boolean) => void): () => void
 listenToPaste(callback: (ev: PasteEvent) => void): () => void
 
 type PasteEvent = {
@@ -190,6 +190,8 @@ function useInitializeSelectionManager(props: {
   state?: SelectionManagerState;                          // Controlled mode
   onStateChange?: (state: SelectionManagerState) => void;
   containerElement?: HTMLElement | null;                 // Auto event handling
+  formats?: Format[];                                     // Default: ["csv", "tsv"]
+  disableAutoClipboard?: boolean;                         // Default: false - if true, disables auto copy/cut/paste handling
 }): SelectionManager
 ```
 
@@ -269,7 +271,7 @@ const EditableCell = ({ row, col, selectionManager, initialValue }) => {
 
 ### Data Operations
 ```typescript
-// Copy
+// Copy/Cut
 selectionManager.listenToCopy((isCut) => {
   const boundingRect = selectionManager.getSelectionsBoundingRect();
   const grid = Array(height).fill(null).map(() => Array(width).fill(""));
@@ -278,6 +280,11 @@ selectionManager.listenToCopy((isCut) => {
   });
   const tsv = grid.map(row => row.join('\t')).join('\n');
   navigator.clipboard.writeText(tsv);
+  
+  if (isCut) {
+    // Handle cut: clear the cells after copying
+    selectionManager.clearSelectedCells();
+  }
 });
 
 // Paste - REQUIRED for paste to work!
@@ -330,7 +337,8 @@ const exportSelection = () => {
 **⚠️ Performance Caveat**: Each cell/header MUST be its own component to get memoized callback refs. If you create callback refs in a loop or render function, they will be recreated on every render, causing constant cleanup/setup cycles and poor performance.
 
 **Data Handling Notes:**
-- **Paste requires setup**: You must call `listenToPaste()` and handle the event (typically by calling `saveCellValues(ev.updates)`) for paste to work. The callback receives a `PasteEvent` with `updates` (parsed cell data) and `rawString` (original clipboard content). The clipboard content is automatically parsed and positioned at the current selection.
+- **Auto clipboard handling**: By default, `useInitializeSelectionManager` automatically sets up copy/cut/paste handlers. Copy/cut operations trigger `listenToCopy()` with `cut: true` for cut and `cut: false` for copy. Paste operations automatically call `saveCellValues()`. Set `disableAutoClipboard: true` to handle clipboard operations manually.
+- **Paste requires setup**: If `disableAutoClipboard` is true, you must call `listenToPaste()` and handle the event (typically by calling `saveCellValues(ev.updates)`) for paste to work. The callback receives a `PasteEvent` with `updates` (parsed cell data) and `rawString` (original clipboard content). The clipboard content is automatically parsed and positioned at the current selection.
 - `listenToUpdateData()` fires for all data changes: cell editing, paste operations, file drops, `saveCellValue()`, `saveCellValues()`, and `clearSelectedCells()`
 - `clearSelectedCells()` automatically clears selected cells by calling `saveCellValues()` with empty strings
 - Use `saveCellValue()` for single cell updates and `saveCellValues()` for batch updates
@@ -345,8 +353,8 @@ const exportSelection = () => {
 - **shift**: Shift+click to extend last selection
 
 ### Data Operations
-- **Copy (Ctrl/Cmd+C)**: Triggers `listenToCopy()` callback for user handling
-- **Cut (Ctrl/Cmd+X)**: Same as copy, followed by `clearSelectedCells()` 
+- **Copy (Ctrl/Cmd+C)**: Triggers `listenToCopy(false)` callback. With auto clipboard enabled (default), this is handled automatically.
+- **Cut (Ctrl/Cmd+X)**: Triggers `listenToCopy(true)` callback. With auto clipboard enabled (default), cells are automatically cleared. If `disableAutoClipboard: true`, you must handle clearing cells yourself.
 - **Delete (Delete/Backspace)**: Calls `clearSelectedCells()` which triggers `listenToUpdateData()` with empty values
 - **Paste (Ctrl/Cmd+V)**: Automatically parses CSV/TSV from clipboard and triggers `listenToPaste()` callback with a `PasteEvent` containing `updates` and `rawString`. You must set up a `listenToPaste()` listener and handle the event (typically by calling `saveCellValues(ev.updates)`) for paste to work.
 - **File Drop**: Supports dropping CSV/TSV files and triggers `listenToUpdateData()`

@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.25
+
+### Patch Changes
+
+- make cut optionally managed and pass a cut parameter to listenToCopy
+
 ## 0.0.24
 
 ### Patch Changes

@@ -336,8 +336,12 @@ describe("SelectionManager Extended Tests", () => {
     });
 
     it("should handle cut operation", () => {
-      const copyCallback = mock();
       const updateCallback = mock();
+      const copyCallback = mock((cut: boolean) => {
+        if (cut) {
+          updateCallback();
+        }
+      });
       selectionManager.listenToCopy(copyCallback);
       selectionManager.listenToUpdateData(updateCallback);
 
