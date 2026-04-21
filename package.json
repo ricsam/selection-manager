@@ -1,5 +1,28 @@
 {
   "name": "@ricsam/selection-manager",
+  "description": "A selection manager for building spreadsheet-like React grids with keyboard navigation, editing, copy/paste, and fill-handle interactions.",
+  "keywords": [
+    "selection",
+    "grid",
+    "table",
+    "spreadsheet",
+    "react",
+    "hook",
+    "excel",
+    "copy-paste",
+    "keyboard-navigation",
+    "data-grid"
+  ],
+  "author": "ricsam <oss@ricsam.dev>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ricsam/selection-manager.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ricsam/selection-manager/issues"
+  },
+  "homepage": "https://github.com/ricsam/selection-manager#readme",
   "module": "src/lib.ts",
   "types": "src/lib.ts",
   "type": "module",
