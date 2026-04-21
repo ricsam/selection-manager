@@ -798,6 +798,52 @@ const canShowFillHandle = selectionManager.canCellHaveFillHandle({ row: 2, col: 
 const fillBaseSelection = selectionManager.getFillHandleBaseSelection();
 ```
 
+### 🛠️ DOM Setup Methods (High-Performance Mode)
+
+These methods automatically handle event listeners, styling updates, and state synchronization. They update the DOM directly without React re-renders, making them ideal for grids with thousands of cells.
+
+```typescript
+// Cell setup - handles mouse events, visual updates, and input capture positioning
+const cleanupCell = selectionManager.setupCellElement(el, { row, col });
+
+// Header setup - handles mouse events and visual updates
+const cleanupHeader = selectionManager.setupHeaderElement(el, index, 'row');
+
+// Container setup - handles all global events (keyboard, paste, drag/drop, focus)
+const cleanupContainer = selectionManager.setupContainerElement(el);
+
+// Input setup - handles blur, Enter/Tab to save, focus management
+const cleanupInput = selectionManager.setupInputElement(inputEl, { rowIndex, colIndex });
+```
+
+**setupCellElement** automatically:
+- Sets up mouse event listeners (mousedown, mouseenter, dblclick)
+- Updates boxShadow style when selections change
+- Detects fill handle interactions via `data-fill-handle` attribute
+- Positions input capture element when cell becomes active
+
+**setupHeaderElement** automatically:
+- Sets up mouse event listeners (mousedown, mouseenter)
+- Updates boxShadow for header selection/hover states
+
+**setupContainerElement** automatically:
+- Handles global mouse events (mouseup, mousedown for selection completion)
+- Handles all keyboard shortcuts (arrows, Ctrl+C/V/X, etc.)
+- Handles paste events
+- Handles drag & drop for CSV/TSV files
+- Prevents text selection during drag operations
+- Creates and manages invisible input capture element for keyboard input
+- Updates container boxShadow on focus changes
+- Clears hover state when mouse leaves container
+
+**setupInputElement** automatically:
+- Saves cell value on blur
+- Handles Enter/Tab keys to save
+- Sets initial value from editing state
+- Focuses input and selects all text
+
+**Important**: Always use `useCallback` for refs to prevent unnecessary re-setup. Call cleanup functions when components unmount. `setupContainerElement` should be called once per grid.
+
 ### ✏️ Cell Editing Best Practices
 
 When implementing cell editing, follow these patterns for the best user experience:

@@ -166,9 +166,20 @@ writeToClipboard(data: string): void
 setupCellElement(el: HTMLElement, cell: { row: number; col: number }): () => void
 setupHeaderElement(el: HTMLElement, index: number, type: "row" | "col"): () => void
 setupContainerElement(el: HTMLElement): () => void
+setupInputElement(element: HTMLInputElement | HTMLTextAreaElement, cell: { rowIndex: number; colIndex: number }): () => void
 ```
 
-Automatically handles event listeners, styling updates, and state synchronization. Returns cleanup functions.
+These methods automatically handle event listeners, styling updates, and state synchronization. They update the DOM directly without React re-renders, making them ideal for grids with thousands of cells.
+
+**setupCellElement**: Sets up mouse event listeners (mousedown, mouseenter, dblclick), automatically updates boxShadow on state changes, handles fill handle detection via `data-fill-handle` attribute, and positions the input capture element when the cell becomes active. Returns cleanup function.
+
+**setupHeaderElement**: Sets up mouse event listeners (mousedown, mouseenter) and automatically updates boxShadow for header selection/hover states. Returns cleanup function.
+
+**setupContainerElement**: Sets up global event handling for the entire grid. Handles mouse events (mouseup, mousedown for selection completion and focus), keyboard events (all shortcuts), paste events, drag & drop (CSV/TSV files), prevents text selection during drag operations, creates and manages invisible input capture element for keyboard input, updates container boxShadow on focus changes, and clears hover state on mouse leave. Returns cleanup function.
+
+**setupInputElement**: Sets up input/textarea for cell editing. Handles blur to auto-save, Enter/Tab to save, sets initial value from editing state, focuses input and selects all text. Returns cleanup function.
+
+**Important**: Always use `useCallback` for refs to prevent unnecessary re-setup. Call cleanup functions when components unmount or refs change. `setupContainerElement` should be called once per grid.
 
 ### Focus Management
 ```typescript

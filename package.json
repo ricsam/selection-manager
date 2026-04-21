@@ -24,6 +24,7 @@
   },
   "scripts": {
     "dev": "bun --hot index.html",
+    "install:local": "bun scripts/install-local-build.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit"
   },
