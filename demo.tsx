@@ -174,11 +174,6 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
 
       const value = values[`${row},${col}`] ?? `${row},${col}`;
 
-      const save = (value: string) => {
-        selectionManager.saveCellValue({ rowIndex: row, colIndex: col }, value);
-        selectionManager.cancelEditing();
-      };
-
       return (
         <div
           key={`${row}-${col}`}
@@ -227,15 +222,12 @@ const Grid = React.forwardRef<HTMLDivElement, GridProps>(
               }}
               type="text"
               defaultValue={isEditing.initialValue ?? value}
-              onBlur={(e) => save(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  save(e.currentTarget.value);
-                }
-              }}
               ref={(el) => {
                 if (el) {
-                  el.focus();
+                  return selectionManager.setupInputElement(el, {
+                    rowIndex: row,
+                    colIndex: col,
+                  });
                 }
               }}
             />

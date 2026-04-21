@@ -3016,18 +3016,32 @@ export class SelectionManager {
     cell: { rowIndex: number; colIndex: number },
   ) {
     const el = element as HTMLInputElement; // (or HTMLTextAreaElement)
-    const save = () => {
-      this.saveCellValue(cell, el.value);
+    let shouldCommitOnBlur = true;
+    let isFinishing = false;
+    const finishEditing = (shouldSave: boolean) => {
+      if (isFinishing) {
+        return;
+      }
+      isFinishing = true;
+      shouldCommitOnBlur = false;
+      if (shouldSave) {
+        this.saveCellValue(cell, el.value);
+      }
       this.cancelEditing();
     };
     const onBlur = () => {
-      save();
+      if (shouldCommitOnBlur) {
+        finishEditing(true);
+      }
     };
     const onKeyDown = (e: GenericKeyboardEvent) => {
       if (e.key === "Enter") {
-        save();
+        finishEditing(true);
       } else if (e.key === "Tab") {
-        save();
+        finishEditing(true);
+        e.preventDefault();
+      } else if (e.key === "Escape") {
+        finishEditing(false);
         e.preventDefault();
       }
     };

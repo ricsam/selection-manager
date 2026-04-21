@@ -287,6 +287,45 @@ describe("SelectionManager Advanced Tests", () => {
       };
     };
 
+    const createInputHarness = () => {
+      const inputListeners = new Map<string, Listener[]>();
+      const registerListener = (
+        listeners: Map<string, Listener[]>,
+        type: string,
+        listener: Listener,
+      ) => {
+        listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+      };
+      const unregisterListener = (
+        listeners: Map<string, Listener[]>,
+        type: string,
+        listener: Listener,
+      ) => {
+        listeners.set(
+          type,
+          (listeners.get(type) ?? []).filter((candidate) => candidate !== listener),
+        );
+      };
+
+      const inputElement = {
+        value: "",
+        selectionStart: 0,
+        selectionEnd: 0,
+        addEventListener: mock((type: string, listener: Listener) => {
+          registerListener(inputListeners, type, listener);
+        }),
+        removeEventListener: mock((type: string, listener: Listener) => {
+          unregisterListener(inputListeners, type, listener);
+        }),
+        focus: mock(),
+      } as any;
+
+      return {
+        inputListeners,
+        inputElement,
+      };
+    };
+
     it("should setup cell element with event handlers", () => {
       const mockElement = {
         addEventListener: mock(),
@@ -509,6 +548,65 @@ describe("SelectionManager Advanced Tests", () => {
       } finally {
         restore();
       }
+    });
+
+    it("should discard edit on Escape without saving on blur", () => {
+      const { inputListeners, inputElement } = createInputHarness();
+      const updateListener = mock();
+      selectionManager.listenToUpdateData(updateListener);
+
+      selectionManager.editCell(1, 2, "start");
+      const cleanup = selectionManager.setupInputElement(inputElement, {
+        rowIndex: 1,
+        colIndex: 2,
+      });
+
+      inputElement.value = "edited";
+      const preventDefault = mock();
+      inputListeners.get("keydown")?.[0]?.({
+        key: "Escape",
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        preventDefault,
+      });
+      inputListeners.get("blur")?.[0]?.();
+
+      expect(preventDefault).toHaveBeenCalled();
+      expect(updateListener).not.toHaveBeenCalled();
+      expect(selectionManager.isEditing).toEqual({ type: "none" });
+
+      cleanup();
+    });
+
+    it("should save once on Enter even if blur follows", () => {
+      const { inputListeners, inputElement } = createInputHarness();
+      const updateListener = mock();
+      selectionManager.listenToUpdateData(updateListener);
+
+      selectionManager.editCell(1, 2, "start");
+      const cleanup = selectionManager.setupInputElement(inputElement, {
+        rowIndex: 1,
+        colIndex: 2,
+      });
+
+      inputElement.value = "edited";
+      inputListeners.get("keydown")?.[0]?.({
+        key: "Enter",
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        preventDefault: mock(),
+      });
+      inputListeners.get("blur")?.[0]?.();
+
+      expect(updateListener).toHaveBeenCalledTimes(1);
+      expect(updateListener).toHaveBeenCalledWith([
+        { rowIndex: 1, colIndex: 2, value: "edited" },
+      ]);
+      expect(selectionManager.isEditing).toEqual({ type: "none" });
+
+      cleanup();
     });
   });
 
