@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.26
+
+### Patch Changes
+
+- better keyboard handling
+
 ## 0.0.25
 
 ### Patch Changes
