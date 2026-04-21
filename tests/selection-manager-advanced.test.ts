@@ -555,6 +555,14 @@ describe("SelectionManager Advanced Tests", () => {
       const updateListener = mock();
       selectionManager.listenToUpdateData(updateListener);
 
+      selectionManager.cellMouseDown(1, 2, {
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        isFillHandle: false,
+      });
+      selectionManager.mouseUp();
+      selectionManager.focus();
       selectionManager.editCell(1, 2, "start");
       const cleanup = selectionManager.setupInputElement(inputElement, {
         rowIndex: 1,
@@ -563,18 +571,69 @@ describe("SelectionManager Advanced Tests", () => {
 
       inputElement.value = "edited";
       const preventDefault = mock();
+      const stopPropagation = mock();
       inputListeners.get("keydown")?.[0]?.({
         key: "Escape",
         shiftKey: false,
         ctrlKey: false,
         metaKey: false,
         preventDefault,
+        stopPropagation,
       });
       inputListeners.get("blur")?.[0]?.();
 
       expect(preventDefault).toHaveBeenCalled();
+      expect(stopPropagation).toHaveBeenCalled();
       expect(updateListener).not.toHaveBeenCalled();
       expect(selectionManager.isEditing).toEqual({ type: "none" });
+      expect(selectionManager.hasFocus).toBe(true);
+      expect(selectionManager.hasSelection()).toBe(true);
+
+      cleanup();
+    });
+
+    it("should let a second Escape blur the grid after editor Escape", () => {
+      const { inputListeners, inputElement } = createInputHarness();
+
+      selectionManager.cellMouseDown(1, 2, {
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        isFillHandle: false,
+      });
+      selectionManager.mouseUp();
+      selectionManager.focus();
+      selectionManager.editCell(1, 2, "start");
+
+      const cleanup = selectionManager.setupInputElement(inputElement, {
+        rowIndex: 1,
+        colIndex: 2,
+      });
+
+      inputListeners.get("keydown")?.[0]?.({
+        key: "Escape",
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        preventDefault: mock(),
+        stopPropagation: mock(),
+      });
+      inputListeners.get("blur")?.[0]?.();
+
+      expect(selectionManager.hasFocus).toBe(true);
+      expect(selectionManager.hasSelection()).toBe(true);
+      expect(selectionManager.isEditing).toEqual({ type: "none" });
+
+      selectionManager.handleKeyDown({
+        key: "Escape",
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        preventDefault: mock(),
+      });
+
+      expect(selectionManager.hasFocus).toBe(false);
+      expect(selectionManager.hasSelection()).toBe(false);
 
       cleanup();
     });

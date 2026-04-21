@@ -3043,6 +3043,7 @@ export class SelectionManager {
       } else if (e.key === "Escape") {
         finishEditing(false);
         e.preventDefault();
+        e.stopPropagation?.();
       }
     };
     el.addEventListener("blur", onBlur);

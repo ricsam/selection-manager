@@ -138,6 +138,7 @@ export type GenericKeyboardEvent = {
   ctrlKey: boolean;
   metaKey: boolean;
   preventDefault: () => void;
+  stopPropagation?: () => void;
 };
 
 export type PasteEvent = {
