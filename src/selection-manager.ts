@@ -2787,6 +2787,9 @@ export class SelectionManager {
   }
 
   setupContainerElement(el: HTMLElement) {
+    const ownerDocument = el.ownerDocument ?? document;
+    const ownerWindow = ownerDocument.defaultView ?? window;
+
     const onMouseUp = (ev: MouseEvent) => {
       this.mouseUp();
     };
@@ -2833,7 +2836,7 @@ export class SelectionManager {
         if (type !== "none") {
           const preventSelection = (e: Event) => {
             e.preventDefault();
-            document.getSelection()?.empty();
+            ownerDocument.getSelection()?.empty();
           };
           el.addEventListener("selectstart", preventSelection);
           el.addEventListener("selectionchange", preventSelection);
@@ -2850,7 +2853,7 @@ export class SelectionManager {
       (state) => state.hasFocus && state.isEditing.type === "none",
       (focus) => {
         if (focus) {
-          const textarea = document.createElement("textarea");
+          const textarea = ownerDocument.createElement("textarea");
           textarea.style.position = "fixed";
           textarea.style.top = "0";
           textarea.style.left = "0";
@@ -2861,21 +2864,82 @@ export class SelectionManager {
           textarea.style.zIndex = "-1";
           textarea.name = "selection-manager-input-capture";
           textarea.tabIndex = -1;
-          document.body.appendChild(textarea);
+          el.appendChild(textarea);
+
+          let focusTrapTimeout: ReturnType<typeof setTimeout> | undefined;
+          const editTopLeftCell = (value: string) => {
+            const cell = this.getTopLeftCellInSelection();
+            if (cell) {
+              this.editCell(cell.row, cell.col, value);
+            }
+          };
+          const focusTextarea = () => {
+            if (
+              this.inputCaptureElement !== textarea ||
+              !textarea.isConnected ||
+              !this.hasFocus ||
+              this.isEditing.type !== "none"
+            ) {
+              return;
+            }
+            if (
+              typeof ownerDocument.hasFocus === "function" &&
+              !ownerDocument.hasFocus()
+            ) {
+              return;
+            }
+            if (ownerDocument.activeElement === textarea) {
+              return;
+            }
+            textarea.focus({
+              preventScroll: true,
+            });
+          };
+          const clearScheduledFocusTrap = () => {
+            if (focusTrapTimeout) {
+              clearTimeout(focusTrapTimeout);
+              focusTrapTimeout = undefined;
+            }
+          };
+          const scheduleFocusTrap = () => {
+            if (
+              this.inputCaptureElement !== textarea ||
+              !this.hasFocus ||
+              this.isEditing.type !== "none"
+            ) {
+              return;
+            }
+            clearScheduledFocusTrap();
+            focusTrapTimeout = setTimeout(() => {
+              focusTrapTimeout = undefined;
+              focusTextarea();
+            }, 0);
+          };
 
           textarea.setAttribute("autocomplete", "off");
           textarea.setAttribute("autocorrect", "off");
           textarea.setAttribute("autocapitalize", "off");
           textarea.setAttribute("spellcheck", "false");
           textarea.autofocus = true;
+          textarea.addEventListener("keydown", (e) => {
+            if (
+              e.isComposing ||
+              e.ctrlKey ||
+              e.metaKey ||
+              e.altKey ||
+              e.key.length !== 1
+            ) {
+              return;
+            }
+            e.preventDefault();
+            editTopLeftCell(e.key);
+            textarea.value = "";
+          });
           textarea.addEventListener("beforeinput", (e) => {
             e.preventDefault();
             if (e.inputType === "insertText") {
               if (e.data) {
-                const cell = this.getTopLeftCellInSelection();
-                if (cell) {
-                  this.editCell(cell.row, cell.col, e.data);
-                }
+                editTopLeftCell(e.data);
               }
             }
             textarea.value = "";
@@ -2883,34 +2947,49 @@ export class SelectionManager {
           textarea.addEventListener("compositionend", (e) => {
             e.preventDefault();
             if (e.data) {
-              const cell = this.getTopLeftCellInSelection();
-              if (cell) {
-                this.editCell(cell.row, cell.col, e.data);
-              }
+              editTopLeftCell(e.data);
             }
             textarea.value = "";
           });
-          const onKeyDown = () => {
-            textarea.focus({
-              preventScroll: true,
-            });
+          const onTextareaBlur = () => {
+            scheduleFocusTrap();
           };
-          window.addEventListener("keydown", onKeyDown);
+          const onDocumentFocusIn = (event: FocusEvent) => {
+            if (event.target !== textarea) {
+              scheduleFocusTrap();
+            }
+          };
+          const onKeyDown = () => {
+            focusTextarea();
+          };
+          textarea.addEventListener("blur", onTextareaBlur);
+          ownerDocument.addEventListener("focusin", onDocumentFocusIn, true);
+          ownerWindow.addEventListener("focus", scheduleFocusTrap);
+          ownerWindow.addEventListener("keydown", onKeyDown);
           this.inputCaptureElement = textarea;
+          focusTextarea();
           return () => {
+            clearScheduledFocusTrap();
             this.inputCaptureElement = null;
-            window.removeEventListener("keydown", onKeyDown);
-            document.body.removeChild(textarea);
+            textarea.removeEventListener("blur", onTextareaBlur);
+            ownerDocument.removeEventListener(
+              "focusin",
+              onDocumentFocusIn,
+              true,
+            );
+            ownerWindow.removeEventListener("focus", scheduleFocusTrap);
+            ownerWindow.removeEventListener("keydown", onKeyDown);
+            el.removeChild(textarea);
           };
         }
       },
       true,
     );
 
-    window.addEventListener("mouseup", onMouseUp);
-    window.addEventListener("mousedown", onMouseDown);
-    window.addEventListener("keydown", onKeyDown);
-    document.addEventListener("paste", handlePaste);
+    ownerWindow.addEventListener("mouseup", onMouseUp);
+    ownerWindow.addEventListener("mousedown", onMouseDown);
+    ownerWindow.addEventListener("keydown", onKeyDown);
+    ownerDocument.addEventListener("paste", handlePaste);
     el.addEventListener("dragover", handleDragOver);
     el.addEventListener("drop", handleDrop);
     el.addEventListener("mouseleave", handleMouseLeave);
@@ -2919,10 +2998,10 @@ export class SelectionManager {
       el.style.boxShadow = boxShadow ?? "";
     });
     return () => {
-      window.removeEventListener("mouseup", onMouseUp);
-      window.removeEventListener("mousedown", onMouseDown);
-      window.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("paste", handlePaste);
+      ownerWindow.removeEventListener("mouseup", onMouseUp);
+      ownerWindow.removeEventListener("mousedown", onMouseDown);
+      ownerWindow.removeEventListener("keydown", onKeyDown);
+      ownerDocument.removeEventListener("paste", handlePaste);
       el.removeEventListener("dragover", handleDragOver);
       el.removeEventListener("drop", handleDrop);
       el.removeEventListener("mouseleave", handleMouseLeave);

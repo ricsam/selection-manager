@@ -181,6 +181,112 @@ describe("SelectionManager Advanced Tests", () => {
   });
 
   describe("Element Setup", () => {
+    type Listener = (...args: unknown[]) => void;
+
+    const createContainerHarness = () => {
+      const originalWindow = globalThis.window;
+      const originalDocument = globalThis.document;
+
+      const registerListener = (
+        listeners: Map<string, Listener[]>,
+        type: string,
+        listener: Listener,
+      ) => {
+        listeners.set(type, [...(listeners.get(type) ?? []), listener]);
+      };
+      const unregisterListener = (
+        listeners: Map<string, Listener[]>,
+        type: string,
+        listener: Listener,
+      ) => {
+        listeners.set(
+          type,
+          (listeners.get(type) ?? []).filter((candidate) => candidate !== listener),
+        );
+      };
+
+      const windowListeners = new Map<string, Listener[]>();
+      const documentListeners = new Map<string, Listener[]>();
+      const textareaListeners = new Map<string, Listener[]>();
+
+      const windowMock = {
+        addEventListener: mock((type: string, listener: Listener) => {
+          registerListener(windowListeners, type, listener);
+        }),
+        removeEventListener: mock((type: string, listener: Listener) => {
+          unregisterListener(windowListeners, type, listener);
+        }),
+      } as any;
+
+      const documentMock = {
+        activeElement: null as unknown,
+        hasFocus: mock(() => true),
+        defaultView: windowMock,
+        addEventListener: mock((type: string, listener: Listener) => {
+          registerListener(documentListeners, type, listener);
+        }),
+        removeEventListener: mock((type: string, listener: Listener) => {
+          unregisterListener(documentListeners, type, listener);
+        }),
+        getSelection: mock(() => ({ empty: mock() })),
+      } as any;
+
+      const textarea = {
+        style: {} as Record<string, string>,
+        value: "",
+        name: "",
+        tabIndex: -1,
+        autofocus: false,
+        isConnected: false,
+        ownerDocument: documentMock,
+        setAttribute: mock(),
+        addEventListener: mock((type: string, listener: Listener) => {
+          registerListener(textareaListeners, type, listener);
+        }),
+        removeEventListener: mock((type: string, listener: Listener) => {
+          unregisterListener(textareaListeners, type, listener);
+        }),
+        focus: mock(() => {
+          documentMock.activeElement = textarea;
+        }),
+      } as any;
+
+      documentMock.createElement = mock(() => textarea);
+
+      const mockElement = {
+        ownerDocument: documentMock,
+        tagName: "DIV",
+        addEventListener: mock(),
+        removeEventListener: mock(),
+        contains: mock(() => true),
+        appendChild: mock((node: { isConnected: boolean }) => {
+          node.isConnected = true;
+        }),
+        removeChild: mock((node: { isConnected: boolean }) => {
+          node.isConnected = false;
+        }),
+        getAttribute: mock(() => undefined),
+        style: { boxShadow: "" },
+      } as any;
+
+      globalThis.window = windowMock;
+      globalThis.document = documentMock;
+
+      return {
+        windowListeners,
+        documentListeners,
+        textareaListeners,
+        windowMock,
+        documentMock,
+        textarea,
+        mockElement,
+        restore: () => {
+          globalThis.window = originalWindow;
+          globalThis.document = originalDocument;
+        },
+      };
+    };
+
     it("should setup cell element with event handlers", () => {
       const mockElement = {
         addEventListener: mock(),
@@ -258,6 +364,151 @@ describe("SelectionManager Advanced Tests", () => {
       // Restore global objects
       globalThis.window = originalWindow;
       globalThis.document = originalDocument;
+    });
+
+    it("should trap focus back to the input capture textarea", async () => {
+      const {
+        documentListeners,
+        textareaListeners,
+        documentMock,
+        textarea,
+        mockElement,
+        restore,
+      } = createContainerHarness();
+
+      try {
+        const cleanup = selectionManager.setupContainerElement(mockElement);
+        selectionManager.focus();
+
+        expect(mockElement.appendChild).toHaveBeenCalledWith(textarea);
+        expect(textarea.focus).toHaveBeenCalledTimes(1);
+
+        documentMock.activeElement = { id: "stolen-focus" };
+        textareaListeners.get("blur")?.[0]?.();
+        documentListeners
+          .get("focusin")
+          ?.forEach((listener) => listener({ target: documentMock.activeElement }));
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(textarea.focus).toHaveBeenCalledTimes(2);
+
+        cleanup();
+
+        expect(mockElement.removeChild).toHaveBeenCalledWith(textarea);
+      } finally {
+        restore();
+      }
+    });
+
+    it("should start editing from printable keydown on the input capture textarea", () => {
+      const { textareaListeners, mockElement, restore } = createContainerHarness();
+
+      selectionManager.cellMouseDown(1, 2, {
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        isFillHandle: false,
+      });
+      selectionManager.mouseUp();
+
+      try {
+        const cleanup = selectionManager.setupContainerElement(mockElement);
+        selectionManager.focus();
+
+        const preventDefault = mock();
+        textareaListeners.get("keydown")?.[0]?.({
+          key: "a",
+          isComposing: false,
+          ctrlKey: false,
+          metaKey: false,
+          altKey: false,
+          preventDefault,
+        });
+
+        expect(preventDefault).toHaveBeenCalled();
+        expect(selectionManager.isEditing).toEqual({
+          type: "cell",
+          row: 1,
+          col: 2,
+          initialValue: "a",
+        });
+
+        cleanup();
+      } finally {
+        restore();
+      }
+    });
+
+    it("should ignore modifier-only keydown on the input capture textarea", () => {
+      const { textareaListeners, mockElement, restore } = createContainerHarness();
+
+      selectionManager.cellMouseDown(1, 2, {
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        isFillHandle: false,
+      });
+      selectionManager.mouseUp();
+
+      try {
+        const cleanup = selectionManager.setupContainerElement(mockElement);
+        selectionManager.focus();
+
+        const preventDefault = mock();
+        textareaListeners.get("keydown")?.[0]?.({
+          key: "Control",
+          isComposing: false,
+          ctrlKey: true,
+          metaKey: false,
+          altKey: false,
+          preventDefault,
+        });
+
+        expect(preventDefault).not.toHaveBeenCalled();
+        expect(selectionManager.isEditing).toEqual({ type: "none" });
+
+        cleanup();
+      } finally {
+        restore();
+      }
+    });
+
+    it("should start editing from compositionend on the input capture textarea", () => {
+      const { textareaListeners, textarea, mockElement, restore } =
+        createContainerHarness();
+
+      selectionManager.cellMouseDown(1, 2, {
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        isFillHandle: false,
+      });
+      selectionManager.mouseUp();
+
+      try {
+        const cleanup = selectionManager.setupContainerElement(mockElement);
+        selectionManager.focus();
+
+        textarea.value = "ö";
+        const preventDefault = mock();
+        textareaListeners.get("compositionend")?.[0]?.({
+          data: "ö",
+          preventDefault,
+        });
+
+        expect(preventDefault).toHaveBeenCalled();
+        expect(selectionManager.isEditing).toEqual({
+          type: "cell",
+          row: 1,
+          col: 2,
+          initialValue: "ö",
+        });
+
+        cleanup();
+      } finally {
+        restore();
+      }
     });
   });
 
