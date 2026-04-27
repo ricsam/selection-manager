@@ -1,6 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { SelectionManager } from "./selection-manager";
-import type { SelectionManagerState, SMArea, MaybeInfNumber } from "./types";
+import type {
+  MaybeInfNumber,
+  ReadonlyCellPredicate,
+  SelectionManagerState,
+  SMArea,
+} from "./types";
 import type { Format } from "./utils";
 
 const useIsomorphicLayoutEffect =
@@ -15,15 +20,23 @@ export function useInitializeSelectionManager(props: {
   containerElement?: HTMLElement | null;
   getGroups?: () => SMArea[];
   formats?: Format[];
+  isCellReadonly?: ReadonlyCellPredicate;
   disableAutoClipboard?: boolean;
 }): SelectionManager {
   const onStateChangeRef = useRef(props.onStateChange);
+  const isCellReadonlyRef = useRef(props.isCellReadonly);
+  isCellReadonlyRef.current = props.isCellReadonly;
+
   const [selectionManager] = useState<SelectionManager>(() => {
     const selectionManager = new SelectionManager(
       props.getNumRows ?? (() => ({ type: "infinity" })),
       props.getNumCols ?? (() => ({ type: "infinity" })),
       props.getGroups ?? (() => []),
-      props.formats,
+      {
+        formats: props.formats,
+        isCellReadonly: (cell) =>
+          isCellReadonlyRef.current?.(cell) ?? false,
+      },
     );
     selectionManager.setState(props.state ?? props.initialState ?? {});
     if (onStateChangeRef.current) {

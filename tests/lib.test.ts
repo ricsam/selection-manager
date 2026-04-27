@@ -1,4 +1,6 @@
 import { describe, test, expect } from "bun:test";
+import { createElement } from "react";
+import { renderToString } from "react-dom/server";
 
 // Test that all exports are available from the main lib entry point
 import {
@@ -32,6 +34,8 @@ import type {
   RealNumber,
   InfinityNumber,
   MaybeInfNumber,
+  ReadonlyCellPredicate,
+  SelectionManagerOptions,
 } from "../src/lib";
 
 describe("lib exports", () => {
@@ -58,6 +62,38 @@ describe("lib exports", () => {
     expect(sm.isSelecting.type).toBe("none");
     expect(sm.isEditing.type).toBe("none");
     expect(sm.isHovering.type).toBe("none");
+  });
+
+  test("should support readonly constructor options", () => {
+    const isCellReadonly: ReadonlyCellPredicate = ({ rowIndex, colIndex }) =>
+      rowIndex === 1 && colIndex === 2;
+    const options: SelectionManagerOptions = { isCellReadonly };
+    const sm = new SelectionManager(
+      () => ({ type: "number", value: 10 }),
+      () => ({ type: "number", value: 10 }),
+      () => [],
+      options,
+    );
+
+    expect(sm.isCellReadonly(1, 2)).toBe(true);
+    expect(sm.isCellReadonly(2, 1)).toBe(false);
+  });
+
+  test("should pass readonly predicate through useInitializeSelectionManager", () => {
+    let sm: SelectionManager | undefined;
+
+    function TestComponent() {
+      sm = useInitializeSelectionManager({
+        isCellReadonly: ({ rowIndex, colIndex }) =>
+          rowIndex === 1 && colIndex === 2,
+      });
+      return null;
+    }
+
+    renderToString(createElement(TestComponent));
+
+    expect(sm?.isCellReadonly(1, 2)).toBe(true);
+    expect(sm?.isCellReadonly(2, 1)).toBe(false);
   });
 
   test("should be able to use patch system", () => {

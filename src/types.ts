@@ -1,6 +1,18 @@
+import type { Format } from "./utils";
+
 export type RealNumber = { type: "number"; value: number };
 export type InfinityNumber = { type: "infinity" };
 export type MaybeInfNumber = RealNumber | InfinityNumber;
+
+export type ReadonlyCellPredicate = (cell: {
+  rowIndex: number;
+  colIndex: number;
+}) => boolean;
+
+export type SelectionManagerOptions = {
+  formats?: Format[];
+  isCellReadonly?: ReadonlyCellPredicate;
+};
 
 export type SMArea = {
   start: { row: number; col: number };

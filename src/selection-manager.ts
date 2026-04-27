@@ -9,6 +9,8 @@ import type {
   MaybeInfNumber,
   PasteEvent,
   RealNumber,
+  ReadonlyCellPredicate,
+  SelectionManagerOptions,
   SelectionManagerState,
   SMArea,
   StatePatch,
@@ -38,12 +40,23 @@ export class SelectionManager {
 
   key = String(Math.random());
 
+  private readonly formats: Format[];
+  private readonly isCellReadonlyPredicate: ReadonlyCellPredicate;
+
   constructor(
     public getNumRows: () => MaybeInfNumber,
     public getNumCols: () => MaybeInfNumber,
     public getGroups: () => SMArea[],
-    private readonly formats: Format[] = ["csv", "tsv"],
-  ) {}
+    options?: Format[] | SelectionManagerOptions,
+  ) {
+    const normalizedOptions = Array.isArray(options)
+      ? { formats: options }
+      : (options ?? {});
+
+    this.formats = normalizedOptions.formats ?? ["csv", "tsv"];
+    this.isCellReadonlyPredicate =
+      normalizedOptions.isCellReadonly ?? (() => false);
+  }
 
   getState(): SelectionManagerState {
     return {
@@ -133,6 +146,9 @@ export class SelectionManager {
   ) {
     const cmdKey = options.metaKey || options.ctrlKey;
     this.willMaybeUpdate();
+    if (this.isEditing.type === "cell" && !this.editingInputElement) {
+      this.isEditing = { type: "none" };
+    }
     const lastSelection = this.selections[this.selections.length - 1];
     if (options.isFillHandle) {
       const fillHandleSelection = this.getFillHandleSelection(
@@ -385,6 +401,10 @@ export class SelectionManager {
   }
 
   editCell(row: number, col: number, initialValue?: string) {
+    if (this.isCellReadonly(row, col)) {
+      return;
+    }
+
     this.willMaybeUpdate();
     const shouldUpdate =
       this.isEditing.type !== "cell" ||
@@ -417,6 +437,10 @@ export class SelectionManager {
       this.isEditing.row === row &&
       this.isEditing.col === col
     );
+  }
+
+  isCellReadonly(rowIndex: number, colIndex: number) {
+    return this.isCellReadonlyPredicate({ rowIndex, colIndex });
   }
 
   canCellHaveFillHandle(cell: { row: number; col: number }) {
@@ -2284,19 +2308,37 @@ export class SelectionManager {
     };
   }
 
+  private getWritableCellUpdates(updates: CellDataUpdate[]) {
+    return updates.filter(
+      (update) => !this.isCellReadonly(update.rowIndex, update.colIndex),
+    );
+  }
+
   public saveCellValue(
     cell: { rowIndex: number; colIndex: number },
     value: string,
   ) {
+    const updates = this.getWritableCellUpdates([
+      { rowIndex: cell.rowIndex, colIndex: cell.colIndex, value },
+    ]);
+    if (updates.length === 0) {
+      return;
+    }
+
     this.listenToUpdateDataListeners.forEach((listener) => {
-      listener([{ rowIndex: cell.rowIndex, colIndex: cell.colIndex, value }]);
+      listener(updates);
       this.onUpdate();
     });
   }
 
   public saveCellValues(updates: CellDataUpdate[]) {
+    const writableUpdates = this.getWritableCellUpdates(updates);
+    if (writableUpdates.length === 0) {
+      return;
+    }
+
     this.listenToUpdateDataListeners.forEach((listener) => {
-      listener(updates);
+      listener(writableUpdates);
     });
   }
 
@@ -2477,6 +2519,8 @@ export class SelectionManager {
             inputCaptureElement.style.width = `${myRect.width}px`;
             inputCaptureElement.style.height = `${myRect.height}px`;
           };
+          setupPositioning();
+          inputCaptureElement.focus({ preventScroll: true });
           inputCaptureElement.addEventListener("keydown", setupPositioning);
           return () => {
             inputCaptureElement.style.top = origStyles.top;
@@ -2601,6 +2645,7 @@ export class SelectionManager {
         this.gt({ type: "number", value: targetCol }, this.getNumCols())
       )
         return;
+      if (this.isCellReadonly(targetRow, targetCol)) return;
 
       updates.push({
         value: cellData.value,
@@ -2726,6 +2771,8 @@ export class SelectionManager {
   }
 
   inputCaptureElement: HTMLTextAreaElement | null = null;
+  private editingInputElement: HTMLInputElement | HTMLTextAreaElement | null =
+    null;
 
   mouseUp() {
     this.willMaybeUpdate();
@@ -3016,6 +3063,7 @@ export class SelectionManager {
     cell: { rowIndex: number; colIndex: number },
   ) {
     const el = element as HTMLInputElement; // (or HTMLTextAreaElement)
+    this.editingInputElement = el;
     let shouldCommitOnBlur = true;
     let isFinishing = false;
     const finishEditing = (shouldSave: boolean) => {
@@ -3061,6 +3109,9 @@ export class SelectionManager {
     el.focus();
     el.selectionStart = el.selectionEnd = el.value.length;
     return () => {
+      if (this.editingInputElement === el) {
+        this.editingInputElement = null;
+      }
       el.removeEventListener("blur", onBlur);
       el.removeEventListener("keydown", onKeyDown);
     };

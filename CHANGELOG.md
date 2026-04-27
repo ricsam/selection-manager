@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.27
+
+### Patch Changes
+
+- add first-class support for read-only cells
+
 ## 0.0.26
 
 ### Patch Changes

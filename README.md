@@ -727,6 +727,12 @@ type PasteEvent = {
   updates: Array<{ rowIndex: number; colIndex: number; value: string }>; // Parsed cell data
   rawString: string;  // Original clipboard content before parsing
 };
+
+// 🔒 Mark cells that can be selected/copied but not changed
+type ReadonlyCellPredicate = (cell: {
+  rowIndex: number;
+  colIndex: number;
+}) => boolean;
 ```
 
 ### 🎨 Visual Styling Methods
@@ -771,6 +777,9 @@ selectionManager.forEachSelectedCell(({ absolute, relative }) => {
 
 // 🖱️ Is this cell being hovered?
 const isHovering = selectionManager.isHoveringCell(row, col);
+
+// 🔒 Is this cell readonly?
+const readonly = selectionManager.isCellReadonly(rowIndex, colIndex);
 
 // 🧹 Cancel any hovering state
 selectionManager.cancelHovering();
@@ -1140,6 +1149,22 @@ unsubscribeCopy();
 unsubscribePaste();
 unsubscribeData();
 unsubscribeFill();
+```
+
+### 🔒 Readonly Cells
+
+Readonly cells are still selectable, navigable, copyable, and usable as fill sources. Editing, paste, delete, cut clearing, drop imports, and saved fill updates skip readonly targets automatically.
+
+```typescript
+const selectionManager = useInitializeSelectionManager({
+  getNumRows: () => ({ type: "number", value: rows.length }),
+  getNumCols: () => ({ type: "number", value: columns.length }),
+  isCellReadonly: ({ rowIndex, colIndex }) =>
+    rowIndex === 0 || columns[colIndex]?.readonly === true,
+});
+
+// Useful for styling locked cells in your grid.
+const readonly = selectionManager.isCellReadonly(rowIndex, colIndex);
 ```
 
 ## 🎪 Advanced Patterns
