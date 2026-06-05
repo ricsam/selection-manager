@@ -3088,6 +3088,14 @@ export class SelectionManager {
       } else if (e.key === "Tab") {
         finishEditing(true);
         e.preventDefault();
+      } else if (
+        e.key === "ArrowUp" ||
+        e.key === "ArrowDown" ||
+        e.key === "ArrowLeft" ||
+        e.key === "ArrowRight"
+      ) {
+        finishEditing(true);
+        e.preventDefault();
       } else if (e.key === "Escape") {
         finishEditing(false);
         e.preventDefault();

@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.28
+
+### Patch Changes
+
+- let keyboard arrow keys finish the edit and move the selected cell
+
 ## 0.0.27
 
 ### Patch Changes
