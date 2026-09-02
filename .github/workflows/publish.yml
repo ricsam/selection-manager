@@ -31,10 +31,9 @@ jobs:
       - run: NODE_ENV=production bun build.ts
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # npm trusted publishing requires a current npm/Node combination.
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
-      - name: Update npm
-        run: npm install -g npm@latest
       - run: npm -v
       - run: npx changeset publish --access=public --registry=https://registry.npmjs.org/
         env:
