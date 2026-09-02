@@ -33,24 +33,25 @@ pnpm add selection-manager
 ```
 
 **📦 What's included:**
+
 ```typescript
-import { 
+import {
   // Main hooks
-  useInitializeSelectionManager, 
+  useInitializeSelectionManager,
   useSelectionManager,
-  
+
   // Core class
   SelectionManager,
-  
+
   // Utility functions
   parseCSVContent,
   writeToClipboard,
-  
+
   // Types
   type CellData,
   type SMSelection,
-  type SelectionManagerState
-} from 'selection-manager';
+  type SelectionManagerState,
+} from "selection-manager";
 ```
 
 ## 🎮 Quick Start - Let's Build Something Cool!
@@ -58,62 +59,68 @@ import {
 Here's how to get started in less than 5 minutes:
 
 ```tsx
-import React, { useState } from 'react';
-import { useInitializeSelectionManager, useSelectionManager } from 'selection-manager';
+import React, { useState } from "react";
+import {
+  useInitializeSelectionManager,
+  useSelectionManager,
+} from "selection-manager";
 
 function MyAwesomeGrid() {
   const [containerElement, setContainerElement] = useState(null);
-  
+
   // 🎉 This one hook does all the heavy lifting!
   const selectionManager = useInitializeSelectionManager({
-    getNumRows: () => 10,      // Your grid size
+    getNumRows: () => 10, // Your grid size
     getNumCols: () => 10,
-    containerElement           // Auto-magic event handling!
+    containerElement, // Auto-magic event handling!
   });
-  
+
   // 📡 Subscribe to selection changes (React-style!)
-  const { selections, hasFocus, boxShadow } = useSelectionManager(selectionManager, () => ({
-    selections: selectionManager.selections,
-    hasFocus: selectionManager.hasFocus,
-    boxShadow: selectionManager.getCellBoxShadow({ row, col }),
-  }));
-  
+  const { selections, hasFocus, boxShadow } = useSelectionManager(
+    selectionManager,
+    () => ({
+      selections: selectionManager.selections,
+      hasFocus: selectionManager.hasFocus,
+      boxShadow: selectionManager.getCellBoxShadow({ row, col }),
+    }),
+  );
+
   return (
-    <div 
+    <div
       ref={setContainerElement}
-      style={{ 
-        outline: 'none',
-        display: 'grid',
-        gridTemplateColumns: 'repeat(10, 60px)',
-        gap: '1px',
-        padding: '20px',
-        backgroundColor: '#f5f5f5'
+      style={{
+        outline: "none",
+        display: "grid",
+        gridTemplateColumns: "repeat(10, 60px)",
+        gap: "1px",
+        padding: "20px",
+        backgroundColor: "#f5f5f5",
       }}
     >
       {Array.from({ length: 100 }, (_, i) => {
         const row = Math.floor(i / 10);
         const col = i % 10;
         const isSelected = selectionManager.isSelected({ row, col });
-        
+
         return (
           <div
             key={i}
             style={{
-              height: '40px',
-              backgroundColor: isSelected ? '#e3f2fd' : 'white',
-              border: '1px solid #ddd',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
+              height: "40px",
+              backgroundColor: isSelected ? "#e3f2fd" : "white",
+              border: "1px solid #ddd",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              cursor: "pointer",
               // ✨ Magic selection borders!
-              boxShadow
+              boxShadow,
             }}
             onMouseDown={(e) => {
               selectionManager.cellMouseDown(row, col, {
                 shiftKey: e.shiftKey,
                 ctrlKey: e.ctrlKey,
-                metaKey: e.metaKey
+                metaKey: e.metaKey,
               });
             }}
             onMouseEnter={() => {
@@ -130,8 +137,9 @@ function MyAwesomeGrid() {
 ```
 
 **🎊 That's it!** You now have a fully functional grid with:
+
 - ✅ Click and drag selection
-- ✅ Ctrl/Cmd+click for multi-selection  
+- ✅ Ctrl/Cmd+click for multi-selection
 - ✅ Shift+click to extend selections
 - ✅ Arrow key navigation
 - ✅ Ctrl/Cmd+A to select all
@@ -146,9 +154,9 @@ Think of `SelectionManager` as the brain of your grid. It knows what's selected,
 ```tsx
 // 🧠 The brain that does it all
 const selectionManager = useInitializeSelectionManager({
-  getNumRows: () => 1000,      // Can be dynamic!
-  getNumCols: () => 50,        // Even Infinity works!
-  containerElement             // Pass this for auto-magic
+  getNumRows: () => 1000, // Can be dynamic!
+  getNumCols: () => 50, // Even Infinity works!
+  containerElement, // Pass this for auto-magic
 });
 
 // 🔍 Ask it anything about selections
@@ -172,16 +180,112 @@ Every mouse interaction has a purpose:
 
 We've got all the shortcuts you expect (and they're smart about editing mode):
 
-| Shortcut | Action | Available When |
-|----------|--------|----------------|
-| `Arrow Keys` | Navigate selection | Not editing |
-| `Shift + Arrows` | Extend selection | Not editing |
-| `Ctrl/Cmd + A` | Select all | Not editing |
-| `Ctrl/Cmd + C` | Copy selection | Not editing |
-| `Ctrl/Cmd + X` | Cut selection | Not editing |
-| `Delete/Backspace` | Clear cells | Not editing |
-| `F2` | Start editing | Always |
-| `Escape` | Cancel editing or clear selection | Always |
+| Shortcut           | Action                            | Available When |
+| ------------------ | --------------------------------- | -------------- |
+| `Arrow Keys`       | Navigate selection                | Not editing    |
+| `Shift + Arrows`   | Extend selection                  | Not editing    |
+| `Ctrl/Cmd + A`     | Select all                        | Not editing    |
+| `Ctrl/Cmd + C`     | Copy selection                    | Not editing    |
+| `Ctrl/Cmd + X`     | Cut selection                     | Not editing    |
+| `Delete/Backspace` | Clear cells                       | Not editing    |
+| `F2`               | Start editing                     | Always         |
+| `Escape`           | Cancel editing or clear selection | Always         |
+
+### Grid, data, and table bounds
+
+Rows and columns describe the complete selectable grid. Bounds are zero-based
+and inclusive; a finite count of zero produces no grid bounds.
+
+```tsx
+const selectionManager = useInitializeSelectionManager({
+  getNumRows: () => ({ type: "number", value: rows.length }),
+  getNumCols: () => ({ type: "number", value: columns.length }),
+  navigation: {
+    getUsedRange: () => dataIndex.usedRange,
+    getTableAt: (cell) => tableIndex.findAt(cell),
+  },
+});
+
+selectionManager.getGridBounds(); // whole selectable grid, or undefined
+selectionManager.getUsedRange(); // smallest range containing data, or undefined
+selectionManager.getTableAt({ row: 4, col: 2 }); // { id, bounds, dataBounds? }
+```
+
+`getUsedRange` and `getTableAt` are supplied by the host because
+SelectionManager does not own cell data. Use `{ type: "infinity" }` for an
+unbounded axis.
+
+### Data-aware keyboard navigation and scrolling
+
+Ctrl/Cmd+Arrow creates a `jump` request. Adding Shift extends the active range
+to the same target. A host can resolve sparse data and table-specific behavior
+without putting data access into SelectionManager:
+
+```tsx
+const selectionManager = useInitializeSelectionManager({
+  getNumRows: () => ({ type: "infinity" }),
+  getNumCols: () => ({ type: "infinity" }),
+  navigation: {
+    getUsedRange: () => dataIndex.usedRange,
+    getTableAt: (cell) => tableIndex.findAt(cell),
+    resolveTarget: (request) => {
+      if (request.kind !== "jump") return undefined;
+      return dataIndex.findJumpTarget(request.origin, request.direction);
+    },
+  },
+});
+
+const unsubscribe = selectionManager.listenToViewportRequest((request) => {
+  viewport.scrollToCell(request.cell, { align: request.align });
+});
+```
+
+Returning `undefined` from `resolveTarget` uses the built-in fallback: table
+data bounds, table bounds, used range, then the finite grid edge. Every handled
+navigation emits a `reveal-cell` request, including a jump whose target is
+already active. The grid/virtualizer remains responsible for actual scrolling.
+
+### Formula reference selection
+
+Reference mode keeps the formula's edited/primary selection intact while cell
+clicks and drags produce a separate reference range:
+
+```tsx
+selectionManager.beginReferenceSelection({
+  id: "reference-at-caret",
+  editedRange: {
+    start: { row: 1, col: 3 },
+    end: {
+      row: { type: "number", value: 1 },
+      col: { type: "number", value: 3 },
+    },
+  },
+});
+
+const unsubscribe = selectionManager.listenToReferenceSelection((event) => {
+  if (event.phase === "start" || event.phase === "change") {
+    formulaEditor.replaceReferenceAtCaret(event.range);
+  }
+  if (event.phase === "commit") {
+    formulaEditor.finishReferenceInsertion(event.range);
+  }
+});
+
+selectionManager.getReferenceSelection();
+selectionManager.isCellInReferenceSelection({ row, col });
+selectionManager.referenceSelectionBorders({ row, col });
+
+// Leave reference mode when the formula edit ends. The range is cleared by default.
+selectionManager.endReferenceSelection();
+// Escape/cancel can instead notify listeners with a `cancel` event.
+selectionManager.cancelReferenceSelection();
+```
+
+During reference mode, cell/header pointer interactions update
+`state.referenceSelection` (`selecting` then `selected`) and do not mutate
+`state.selections`, `state.isSelecting`, or `state.isEditing`. Render the
+reference range as a separate overlay or use the membership/border queries to
+apply a dotted selection treatment.
 
 ### 🎨 Visual Magic - Borders That Make Sense
 
@@ -194,9 +298,13 @@ SelectionManager automatically generates beautiful CSS for you:
 
 ```tsx
 // ✨ Just apply the magic CSS!
-<div style={{ 
-  boxShadow: useSelectionManager(selectionManager, () => selectionManager.getCellBoxShadow({ row, col }))
-}}>
+<div
+  style={{
+    boxShadow: useSelectionManager(selectionManager, () =>
+      selectionManager.getCellBoxShadow({ row, col }),
+    ),
+  }}
+>
   My Cell
 </div>
 ```
@@ -206,44 +314,44 @@ SelectionManager automatically generates beautiful CSS for you:
 ### 📊 Building a Data Table with Headers
 
 ```tsx
-import React, { useState } from 'react';
-import { useInitializeSelectionManager, useSelectionManager } from 'selection-manager';
+import React, { useState } from "react";
+import {
+  useInitializeSelectionManager,
+  useSelectionManager,
+} from "selection-manager";
 
 function DataTable({ data }) {
   const [containerElement, setContainerElement] = useState(null);
-  
+
   const selectionManager = useInitializeSelectionManager({
     getNumRows: () => data.length,
     getNumCols: () => data[0]?.length || 0,
-    containerElement
+    containerElement,
   });
 
   return (
-    <div 
+    <div
       ref={setContainerElement}
       className="data-table"
       tabIndex={0}
-      style={{ outline: 'none' }}
+      style={{ outline: "none" }}
     >
       {/* 📋 Column headers */}
       <div className="header-row">
         <div className="corner-cell" />
         {data[0]?.map((_, colIndex) => (
-          <ColumnHeader 
+          <ColumnHeader
             key={colIndex}
             index={colIndex}
             selectionManager={selectionManager}
           />
         ))}
       </div>
-      
+
       {/* 📊 Data rows */}
       {data.map((row, rowIndex) => (
         <div key={rowIndex} className="data-row">
-          <RowHeader 
-            index={rowIndex}
-            selectionManager={selectionManager}
-          />
+          <RowHeader index={rowIndex} selectionManager={selectionManager} />
           {row.map((cellData, colIndex) => (
             <DataCell
               key={`${rowIndex}-${colIndex}`}
@@ -261,26 +369,25 @@ function DataTable({ data }) {
 
 // 🏷️ Smart column header component
 function ColumnHeader({ index, selectionManager }) {
-  const isSelected = useSelectionManager(
-    selectionManager, 
-    () => selectionManager.isWholeColSelected(index)
+  const isSelected = useSelectionManager(selectionManager, () =>
+    selectionManager.isWholeColSelected(index),
   );
 
   return (
     <div
-      className={`column-header ${isSelected ? 'selected' : ''}`}
+      className={`column-header ${isSelected ? "selected" : ""}`}
       style={{
-        boxShadow: selectionManager.getHeaderBoxShadow(index, 'col')
+        boxShadow: selectionManager.getHeaderBoxShadow(index, "col"),
       }}
       onMouseDown={(e) => {
-        selectionManager.headerMouseDown(index, 'col', {
+        selectionManager.headerMouseDown(index, "col", {
           shiftKey: e.shiftKey,
           ctrlKey: e.ctrlKey,
-          metaKey: e.metaKey
+          metaKey: e.metaKey,
         });
       }}
       onMouseEnter={() => {
-        selectionManager.headerMouseEnter(index, 'col');
+        selectionManager.headerMouseEnter(index, "col");
       }}
     >
       {String.fromCharCode(65 + index)} {/* A, B, C... */}
@@ -288,28 +395,27 @@ function ColumnHeader({ index, selectionManager }) {
   );
 }
 
-// 🔢 Smart row header component  
+// 🔢 Smart row header component
 function RowHeader({ index, selectionManager }) {
-  const isSelected = useSelectionManager(
-    selectionManager,
-    () => selectionManager.isWholeRowSelected(index)
+  const isSelected = useSelectionManager(selectionManager, () =>
+    selectionManager.isWholeRowSelected(index),
   );
 
   return (
     <div
-      className={`row-header ${isSelected ? 'selected' : ''}`}
+      className={`row-header ${isSelected ? "selected" : ""}`}
       style={{
-        boxShadow: selectionManager.getHeaderBoxShadow(index, 'row')
+        boxShadow: selectionManager.getHeaderBoxShadow(index, "row"),
       }}
       onMouseDown={(e) => {
-        selectionManager.headerMouseDown(index, 'row', {
+        selectionManager.headerMouseDown(index, "row", {
           shiftKey: e.shiftKey,
           ctrlKey: e.ctrlKey,
-          metaKey: e.metaKey
+          metaKey: e.metaKey,
         });
       }}
       onMouseEnter={() => {
-        selectionManager.headerMouseEnter(index, 'row');
+        selectionManager.headerMouseEnter(index, "row");
       }}
     >
       {index + 1}
@@ -334,18 +440,18 @@ function EditableSpreadsheet() {
   });
 
   const [containerElement, setContainerElement] = useState(null);
-  
+
   const selectionManager = useInitializeSelectionManager({
     getNumRows: () => 20,
     getNumCols: () => 10,
-    containerElement
+    containerElement,
     // 💡 By default, auto clipboard handling is enabled (copy/cut/paste work automatically)
     // Set disableAutoClipboard: true to handle clipboard operations manually
     // disableAutoClipboard: true  // Uncomment to handle clipboard manually
   });
 
   // 📋 Handle copy operations like a pro
-  // Note: This example shows manual clipboard handling. 
+  // Note: This example shows manual clipboard handling.
   // If disableAutoClipboard is false (default), you can skip this and paste handling.
   useEffect(() => {
     return selectionManager.listenToCopy((isCut) => {
@@ -355,7 +461,9 @@ function EditableSpreadsheet() {
       // 🧮 Create a proper grid for export
       const height = boundingRect.end.row - boundingRect.start.row + 1;
       const width = boundingRect.end.col - boundingRect.start.col + 1;
-      const exportGrid = Array(height).fill(null).map(() => Array(width).fill(""));
+      const exportGrid = Array(height)
+        .fill(null)
+        .map(() => Array(width).fill(""));
 
       // 🎯 Fill only the selected cells
       selectionManager.forEachSelectedCell(({ absolute, relative }) => {
@@ -364,15 +472,19 @@ function EditableSpreadsheet() {
       });
 
       // 📋 Copy to clipboard as TSV (Excel-compatible!)
-      const tsvString = exportGrid.map(row => row.join('\t')).join('\n');
+      const tsvString = exportGrid.map((row) => row.join("\t")).join("\n");
       navigator.clipboard.writeText(tsvString);
-      
+
       if (isCut) {
         // 🗑️ Clear the cut cells
-        selectionManager.getNonOverlappingSelections().forEach(selection => {
+        selectionManager.getNonOverlappingSelections().forEach((selection) => {
           for (let row = selection.start.row; row <= selection.end.row; row++) {
-            for (let col = selection.start.col; col <= selection.end.col; col++) {
-              setData(prev => {
+            for (
+              let col = selection.start.col;
+              col <= selection.end.col;
+              col++
+            ) {
+              setData((prev) => {
                 const newData = new Map(prev);
                 newData.set(`${row},${col}`, "");
                 return newData;
@@ -399,7 +511,7 @@ function EditableSpreadsheet() {
   // 📝 Handle data updates (from cell editing, paste, etc.)
   useEffect(() => {
     return selectionManager.listenToUpdateData((updates) => {
-      setData(prev => {
+      setData((prev) => {
         const newData = new Map(prev);
         updates.forEach(({ rowIndex, colIndex, value }) => {
           newData.set(`${rowIndex},${colIndex}`, value);
@@ -412,10 +524,13 @@ function EditableSpreadsheet() {
   // 🎯 Custom CSV import example
   const handleCsvImport = (csvText: string) => {
     const cellData = parseCSVContent(csvText);
-    const topLeft = selectionManager.getTopLeftCellInSelection() || { row: 0, col: 0 };
-    
+    const topLeft = selectionManager.getTopLeftCellInSelection() || {
+      row: 0,
+      col: 0,
+    };
+
     // Import at current selection position
-    setData(prev => {
+    setData((prev) => {
       const newData = new Map(prev);
       cellData.forEach(({ rowIndex, colIndex, value }) => {
         const targetRow = topLeft.row + rowIndex;
@@ -426,29 +541,25 @@ function EditableSpreadsheet() {
     });
   };
 
-
-
   return (
     <div className="spreadsheet-container">
       <div className="toolbar">
-        <button onClick={() => {
-          const tsv = selectionManager.selectionToTsv(data);
-          console.log('📊 Exported data:', tsv);
-        }}>
+        <button
+          onClick={() => {
+            const tsv = selectionManager.selectionToTsv(data);
+            console.log("📊 Exported data:", tsv);
+          }}
+        >
           📊 Export Selection
         </button>
         <span className="selection-info">
-          {selectionManager.hasSelection() ? 
-            `Selected: ${selectionManager.getState().selections.length} range(s)` : 
-            'No selection'}
+          {selectionManager.hasSelection()
+            ? `Selected: ${selectionManager.getState().selections.length} range(s)`
+            : "No selection"}
         </span>
       </div>
-      
-      <div 
-        ref={setContainerElement}
-        className="spreadsheet-grid"
-        tabIndex={0}
-      >
+
+      <div ref={setContainerElement} className="spreadsheet-grid" tabIndex={0}>
         {Array.from({ length: 20 }, (_, row) =>
           Array.from({ length: 10 }, (_, col) => (
             <EditableCell
@@ -458,7 +569,7 @@ function EditableSpreadsheet() {
               data={data}
               selectionManager={selectionManager}
             />
-          ))
+          )),
         )}
       </div>
     </div>
@@ -467,34 +578,32 @@ function EditableSpreadsheet() {
 
 // ✏️ A cell that can be edited
 const EditableCell = React.memo(({ row, col, data, selectionManager }) => {
-  const isEditing = useSelectionManager(
-    selectionManager,
-    () => selectionManager.isEditingCell(row, col)
+  const isEditing = useSelectionManager(selectionManager, () =>
+    selectionManager.isEditingCell(row, col),
   );
-  
-  const isHovering = useSelectionManager(
-    selectionManager,
-    () => selectionManager.isHoveringCell(row, col)
+
+  const isHovering = useSelectionManager(selectionManager, () =>
+    selectionManager.isHoveringCell(row, col),
   );
-  
-  const cellValue = data.get(`${row},${col}`) || '';
+
+  const cellValue = data.get(`${row},${col}`) || "";
 
   if (isEditing) {
     return (
       <input
         className="cell-editor"
         autoFocus
-        defaultValue={cellValue}  // 🔑 Use defaultValue, not value!
-        onBlur={() => selectionManager.cancelEditing()}  // 🔥 Always cancel on blur
+        defaultValue={cellValue} // 🔑 Use defaultValue, not value!
+        onBlur={() => selectionManager.cancelEditing()} // 🔥 Always cancel on blur
         onKeyDown={(e) => {
-          if (e.key === 'Enter') {
+          if (e.key === "Enter") {
             // 💾 Save using saveCellValue - triggers listenToUpdateData!
             selectionManager.saveCellValue(
               { rowIndex: row, colIndex: col },
-              e.target.value
+              e.target.value,
             );
             selectionManager.cancelEditing();
-          } else if (e.key === 'Escape') {
+          } else if (e.key === "Escape") {
             selectionManager.cancelEditing();
           }
         }}
@@ -504,17 +613,17 @@ const EditableCell = React.memo(({ row, col, data, selectionManager }) => {
 
   return (
     <div
-      className={`spreadsheet-cell ${isHovering ? 'hovering' : ''}`}
+      className={`spreadsheet-cell ${isHovering ? "hovering" : ""}`}
       style={{
         boxShadow: selectionManager.getCellBoxShadow({ row, col }),
         // 🖱️ You can add custom hover styling too!
-        cursor: isHovering ? 'pointer' : 'default'
+        cursor: isHovering ? "pointer" : "default",
       }}
       onMouseDown={(e) => {
         selectionManager.cellMouseDown(row, col, {
           shiftKey: e.shiftKey,
           ctrlKey: e.ctrlKey,
-          metaKey: e.metaKey
+          metaKey: e.metaKey,
         });
       }}
       onMouseEnter={() => {
@@ -535,41 +644,46 @@ const EditableCell = React.memo(({ row, col, data, selectionManager }) => {
 When you need to handle thousands of cells, use the DOM setup approach for maximum performance:
 
 ```tsx
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState } from "react";
 
 // 🏎️ Optimized cell component
-const HighPerformanceCell = React.memo(({ row, col, selectionManager, data }) => {
-  // 🔑 Critical: useCallback prevents ref recreation
-  const cellRef = useCallback((el) => {
-    if (el) {
-      // ✨ This does ALL the work for you:
-      // - Event listeners
-      // - Style updates
-      // - State synchronization
-      return selectionManager.setupCellElement(el, { row, col });
-    }
-  }, [row, col, selectionManager]);
+const HighPerformanceCell = React.memo(
+  ({ row, col, selectionManager, data }) => {
+    // 🔑 Critical: useCallback prevents ref recreation
+    const cellRef = useCallback(
+      (el) => {
+        if (el) {
+          // ✨ This does ALL the work for you:
+          // - Event listeners
+          // - Style updates
+          // - State synchronization
+          return selectionManager.setupCellElement(el, { row, col });
+        }
+      },
+      [row, col, selectionManager],
+    );
 
-  return (
-    <div
-      ref={cellRef}
-      className="performance-cell"
-      style={{
-        width: 60,
-        height: 30,
-        border: "1px solid #e0e0e0",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: "12px",
-        cursor: "pointer",
-        backgroundColor: "white"
-      }}
-    >
-      {data.get(`${row},${col}`) || `${row},${col}`}
-    </div>
-  );
-});
+    return (
+      <div
+        ref={cellRef}
+        className="performance-cell"
+        style={{
+          width: 60,
+          height: 30,
+          border: "1px solid #e0e0e0",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: "12px",
+          cursor: "pointer",
+          backgroundColor: "white",
+        }}
+      >
+        {data.get(`${row},${col}`) || `${row},${col}`}
+      </div>
+    );
+  },
+);
 
 function MassiveGrid() {
   const [containerElement, setContainerElement] = useState(null);
@@ -583,39 +697,39 @@ function MassiveGrid() {
     }
     return grid;
   });
-  
+
   const selectionManager = useInitializeSelectionManager({
     getNumRows: () => 500,
     getNumCols: () => 100,
-    containerElement
+    containerElement,
   });
 
   return (
     <div className="massive-grid-container">
       <h2>🚀 50,000 Cells - Still Smooth as Butter!</h2>
-      <div 
+      <div
         ref={setContainerElement}
         tabIndex={0}
-        style={{ 
+        style={{
           display: "grid",
           gridTemplateColumns: "repeat(100, 60px)",
           gap: "0",
           height: "400px",
           overflow: "auto",
           outline: "none",
-          border: "2px solid #ddd"
+          border: "2px solid #ddd",
         }}
       >
         {Array.from({ length: 500 }, (_, row) =>
           Array.from({ length: 100 }, (_, col) => (
-            <HighPerformanceCell 
+            <HighPerformanceCell
               key={`${row}-${col}`}
-              row={row} 
-              col={col} 
+              row={row}
+              col={col}
               selectionManager={selectionManager}
               data={data}
             />
-          ))
+          )),
         )}
       </div>
     </div>
@@ -633,28 +747,31 @@ function ControlledExample() {
     selections: [],
     hasFocus: false,
     isSelecting: { type: "none" },
-    isEditing: { type: "none" }
+    isEditing: { type: "none" },
+    isHovering: { type: "none" },
+    selectionMode: "primary",
+    referenceSelection: { type: "none" },
   });
-  
+
   const selectionManager = useInitializeSelectionManager({
     getNumRows: () => 10,
     getNumCols: () => 10,
-    state: selectionState,           // 🎛️ You control the state
-    onStateChange: setSelectionState // 📡 Get notified of changes
+    state: selectionState, // 🎛️ You control the state
+    onStateChange: setSelectionState, // 📡 Get notified of changes
   });
 
   // 🎯 Now you can manipulate selections programmatically!
   const selectTopLeftCorner = () => {
-    setSelectionState(prev => ({
+    setSelectionState((prev) => ({
       ...prev,
-      selections: [{ start: { row: 0, col: 0 }, end: { row: 2, col: 2 } }]
+      selections: [{ start: { row: 0, col: 0 }, end: { row: 2, col: 2 } }],
     }));
   };
 
   const clearAllSelections = () => {
-    setSelectionState(prev => ({
+    setSelectionState((prev) => ({
       ...prev,
-      selections: []
+      selections: [],
     }));
   };
 
@@ -666,15 +783,9 @@ function ControlledExample() {
   return (
     <div>
       <div className="controls">
-        <button onClick={selectTopLeftCorner}>
-          🎯 Select Top-Left 3x3
-        </button>
-        <button onClick={clearAllSelections}>
-          🧹 Clear All
-        </button>
-        <button onClick={clearHovering}>
-          🖱️ Clear Hover
-        </button>
+        <button onClick={selectTopLeftCorner}>🎯 Select Top-Left 3x3</button>
+        <button onClick={clearAllSelections}>🧹 Clear All</button>
+        <button onClick={clearHovering}>🖱️ Clear Hover</button>
       </div>
       <Grid selectionManager={selectionManager} />
     </div>
@@ -713,6 +824,8 @@ type SelectionManagerState = {
   isSelecting: IsSelecting; // Current selection operation
   isEditing: IsEditing;     // Current editing state
   isHovering: IsHovering;   // Current hovering state
+  selectionMode: "primary" | "reference";
+  referenceSelection: ReferenceSelectionState;
 };
 
 // 🖱️ Hovering state
@@ -740,7 +853,7 @@ type ReadonlyCellPredicate = (cell: {
 ```typescript
 // ✨ Get beautiful CSS for your cells
 const cellShadow = selectionManager.getCellBoxShadow({ row: 2, col: 3 });
-const headerShadow = selectionManager.getHeaderBoxShadow(2, 'row');
+const headerShadow = selectionManager.getHeaderBoxShadow(2, "row");
 const containerShadow = selectionManager.getContainerBoxShadow();
 
 // 🎨 Or build your own with border information
@@ -772,7 +885,9 @@ const cleanSelections = selectionManager.getNonOverlappingSelections();
 
 // 🔄 Iterate through every selected cell
 selectionManager.forEachSelectedCell(({ absolute, relative }) => {
-  console.log(`Cell ${absolute.row},${absolute.col} -> Grid pos ${relative.row},${relative.col}`);
+  console.log(
+    `Cell ${absolute.row},${absolute.col} -> Grid pos ${relative.row},${relative.col}`,
+  );
 });
 
 // 🖱️ Is this cell being hovered?
@@ -785,25 +900,25 @@ const readonly = selectionManager.isCellReadonly(rowIndex, colIndex);
 selectionManager.cancelHovering();
 
 // 💾 Save a cell value (triggers listenToUpdateData listeners)
-selectionManager.saveCellValue(
-  { rowIndex: 2, colIndex: 3 }, 
-  "New Value"
-);
+selectionManager.saveCellValue({ rowIndex: 2, colIndex: 3 }, "New Value");
 
 // 💾 Save multiple cell values at once
 selectionManager.saveCellValues([
   { rowIndex: 0, colIndex: 0, value: "A1" },
   { rowIndex: 0, colIndex: 1, value: "B1" },
-  { rowIndex: 1, colIndex: 0, value: "A2" }
+  { rowIndex: 1, colIndex: 0, value: "A2" },
 ]);
 
 // 🔗 Group/merged cell operations
 const group = selectionManager.findGroupContainingCell({ row: 2, col: 3 });
 const isHoveringGroup = selectionManager.isHoveringGroup(group);
-const groupShadow = selectionManager.getBoxShadow({ color: '#4CAF50' });
+const groupShadow = selectionManager.getBoxShadow({ color: "#4CAF50" });
 
 // 🎯 Fill handle operations
-const canShowFillHandle = selectionManager.canCellHaveFillHandle({ row: 2, col: 3 });
+const canShowFillHandle = selectionManager.canCellHaveFillHandle({
+  row: 2,
+  col: 3,
+});
 const fillBaseSelection = selectionManager.getFillHandleBaseSelection();
 ```
 
@@ -816,26 +931,32 @@ These methods automatically handle event listeners, styling updates, and state s
 const cleanupCell = selectionManager.setupCellElement(el, { row, col });
 
 // Header setup - handles mouse events and visual updates
-const cleanupHeader = selectionManager.setupHeaderElement(el, index, 'row');
+const cleanupHeader = selectionManager.setupHeaderElement(el, index, "row");
 
 // Container setup - handles all global events (keyboard, paste, drag/drop, focus)
 const cleanupContainer = selectionManager.setupContainerElement(el);
 
 // Input setup - handles blur, Enter/Tab to save, focus management
-const cleanupInput = selectionManager.setupInputElement(inputEl, { rowIndex, colIndex });
+const cleanupInput = selectionManager.setupInputElement(inputEl, {
+  rowIndex,
+  colIndex,
+});
 ```
 
 **setupCellElement** automatically:
+
 - Sets up mouse event listeners (mousedown, mouseenter, dblclick)
 - Updates boxShadow style when selections change
 - Detects fill handle interactions via `data-fill-handle` attribute
 - Positions input capture element when cell becomes active
 
 **setupHeaderElement** automatically:
+
 - Sets up mouse event listeners (mousedown, mouseenter)
 - Updates boxShadow for header selection/hover states
 
 **setupContainerElement** automatically:
+
 - Handles global mouse events (mouseup, mousedown for selection completion)
 - Handles all keyboard shortcuts (arrows, Ctrl+C/V/X, etc.)
 - Handles paste events
@@ -846,6 +967,7 @@ const cleanupInput = selectionManager.setupInputElement(inputEl, { rowIndex, col
 - Clears hover state when mouse leaves container
 
 **setupInputElement** automatically:
+
 - Saves cell value on blur
 - Handles Enter/Tab keys to save
 - Sets initial value from editing state
@@ -883,7 +1005,7 @@ const EditingCell = ({ row, col, selectionManager, initialValue }) => {
       }}
       style={{
         width: "100%",
-        height: "100%", 
+        height: "100%",
         border: "none",
         outline: "none",
         backgroundColor: "transparent",
@@ -907,36 +1029,34 @@ The fill handle lets users drag from the bottom-right corner of a selection to e
 
 ```tsx
 function CellWithFillHandle({ row, col, selectionManager, data }) {
-  const canHaveFillHandle = useSelectionManager(
-    selectionManager,
-    () => selectionManager.canCellHaveFillHandle({ row, col })
+  const canHaveFillHandle = useSelectionManager(selectionManager, () =>
+    selectionManager.canCellHaveFillHandle({ row, col }),
   );
 
   return (
     <div
       className="cell"
       onMouseDown={(e) => {
-        const isFillHandle = 
+        const isFillHandle =
           e.target instanceof HTMLElement &&
           (e.target.hasAttribute("data-fill-handle") ||
-           e.target.querySelector("[data-fill-handle]") !== null);
+            e.target.querySelector("[data-fill-handle]") !== null);
 
         selectionManager.cellMouseDown(row, col, {
           shiftKey: e.shiftKey,
           ctrlKey: e.ctrlKey,
           metaKey: e.metaKey,
-          isFillHandle  // 🔑 Key parameter for fill handle detection
+          isFillHandle, // 🔑 Key parameter for fill handle detection
         });
       }}
       // ... other props
     >
       {/* Your cell content */}
       Cell content here
-      
       {/* 🎯 Fill handle - only shows on bottom-right cell of selection */}
       {canHaveFillHandle && (
         <div
-          data-fill-handle={true}  // 🔑 Required attribute
+          data-fill-handle={true} // 🔑 Required attribute
           style={{
             position: "absolute",
             bottom: 0,
@@ -944,7 +1064,7 @@ function CellWithFillHandle({ row, col, selectionManager, data }) {
             width: 8,
             height: 8,
             backgroundColor: "blue",
-            cursor: "crosshair",  // Excel-style cursor
+            cursor: "crosshair", // Excel-style cursor
           }}
         />
       )}
@@ -956,7 +1076,7 @@ function CellWithFillHandle({ row, col, selectionManager, data }) {
 React.useEffect(() => {
   return selectionManager.listenToFill((baseSelection, fillArea) => {
     console.log("Fill operation:", { from: baseSelection, to: fillArea });
-    
+
     // Implement your fill logic here
     // Example: extend patterns, copy data, generate sequences, etc.
     const updates = generateFillData(baseSelection, fillArea);
@@ -992,7 +1112,7 @@ For spreadsheet-like applications with merged cells, SelectionManager supports g
 const selectionManager = useInitializeSelectionManager({
   getNumRows: () => 10,
   getNumCols: () => 5,
-  // 🔗 Define merged cell areas  
+  // 🔗 Define merged cell areas
   getGroups: () => {
     // Return areas that should be treated as merged cells
     return [
@@ -1006,7 +1126,7 @@ const selectionManager = useInitializeSelectionManager({
 const GroupedCell = ({ row, col, group, selectionManager }) => {
   // Only render content in the top-left cell of a group
   const isTopLeft = group && group.start.row === row && group.start.col === col;
-  
+
   const groupBoxShadow = useSelectionManager(selectionManager, () => {
     return (
       group &&
@@ -1026,7 +1146,7 @@ const GroupedCell = ({ row, col, group, selectionManager }) => {
         // Span multiple cells if this is a group
         gridRowStart: row + 1,
         gridRowEnd: group ? group.end.row + 2 : row + 2,
-        gridColumnStart: col + 1, 
+        gridColumnStart: col + 1,
         gridColumnEnd: group ? group.end.col + 2 : col + 2,
         boxShadow: groupBoxShadow,
         border: '1px solid #ddd',
@@ -1050,7 +1170,11 @@ const GroupedCell = ({ row, col, group, selectionManager }) => {
 SelectionManager exports helpful utility functions for data handling:
 
 ```typescript
-import { parseCSVContent, writeToClipboard, type CellData } from 'selection-manager';
+import {
+  parseCSVContent,
+  writeToClipboard,
+  type CellData,
+} from "selection-manager";
 
 // 📊 Parse CSV/TSV content into cell data format
 type CellData = {
@@ -1070,7 +1194,7 @@ const cells: CellData[] = parseCSVContent(csvData);
 // ]
 
 // 📋 Write data to clipboard (with fallback for older browsers)
-writeToClipboard("Hello\tWorld\nFoo\tBar");  // TSV format
+writeToClipboard("Hello\tWorld\nFoo\tBar"); // TSV format
 ```
 
 **🎯 Smart Parsing Features:**
@@ -1090,7 +1214,7 @@ const dataMap = new Map([
   ["0,0", "Hello"],
   ["0,1", "World"],
   ["1,0", "42"],
-  ["1,1", "🎉"]
+  ["1,1", "🎉"],
 ]);
 const tsv = selectionManager.selectionToTsv(dataMap);
 // Returns: "Hello\tWorld\n42\t🎉" (only selected cells)
@@ -1109,12 +1233,14 @@ const unsubscribeCopy = selectionManager.listenToCopy((isCut) => {
 
 // 📋 Listen for paste operations - REQUIRED for paste to work!
 // Note: Only needed if disableAutoClipboard: true. Otherwise, paste is handled automatically.
-const unsubscribePaste = selectionManager.listenToPaste(({ updates, rawString }) => {
-  // rawString: string - The original clipboard content before parsing
-  // The clipboard content has been parsed and positioned at the current selection
-  // You must handle these updates, typically by saving them:
-  selectionManager.saveCellValues(updates);
-});
+const unsubscribePaste = selectionManager.listenToPaste(
+  ({ updates, rawString }) => {
+    // rawString: string - The original clipboard content before parsing
+    // The clipboard content has been parsed and positioned at the current selection
+    // You must handle these updates, typically by saving them:
+    selectionManager.saveCellValues(updates);
+  },
+);
 
 const unsubscribeData = selectionManager.listenToUpdateData((data) => {
   console.log("Data updated:", data);
@@ -1122,15 +1248,17 @@ const unsubscribeData = selectionManager.listenToUpdateData((data) => {
   // This fires for: cell editing, paste operations, file drops, and manual saves
 });
 
-const unsubscribeFill = selectionManager.listenToFill((baseSelection, fillArea) => {
-  console.log("Fill operation:", { from: baseSelection, to: fillArea });
-  // baseSelection: The original selected area being extended from
-  // fillArea: The new area being filled (includes direction and extent)
-  
-  // Implement your fill logic: copy data, extend patterns, generate sequences, etc.
-  const fillUpdates = generateDataForFillArea(baseSelection, fillArea);
-  selectionManager.saveCellValues(fillUpdates);
-});
+const unsubscribeFill = selectionManager.listenToFill(
+  (baseSelection, fillArea) => {
+    console.log("Fill operation:", { from: baseSelection, to: fillArea });
+    // baseSelection: The original selected area being extended from
+    // fillArea: The new area being filled (includes direction and extent)
+
+    // Implement your fill logic: copy data, extend patterns, generate sequences, etc.
+    const fillUpdates = generateDataForFillArea(baseSelection, fillArea);
+    selectionManager.saveCellValues(fillUpdates);
+  },
+);
 
 // 🗑️ Clear selected cells (triggers listenToUpdateData with empty values)
 selectionManager.clearSelectedCells();
@@ -1141,7 +1269,7 @@ selectionManager.saveCellValue({ rowIndex: 2, colIndex: 3 }, "New Value");
 // 💾 Save multiple cell values (triggers listenToUpdateData)
 selectionManager.saveCellValues([
   { rowIndex: 0, colIndex: 0, value: "A1" },
-  { rowIndex: 0, colIndex: 1, value: "B1" }
+  { rowIndex: 0, colIndex: 1, value: "B1" },
 ]);
 
 // 🧹 Clean up when done
@@ -1174,8 +1302,8 @@ const readonly = selectionManager.isCellReadonly(rowIndex, colIndex);
 ```tsx
 function InfiniteGrid() {
   const selectionManager = useInitializeSelectionManager({
-    getNumRows: () => Infinity,    // 🤯 Infinite rows!
-    getNumCols: () => Infinity,    // 🤯 Infinite columns!
+    getNumRows: () => Infinity, // 🤯 Infinite rows!
+    getNumCols: () => Infinity, // 🤯 Infinite columns!
   });
 
   // Selections can now have Infinity as end coordinates
@@ -1187,12 +1315,14 @@ function InfiniteGrid() {
 
 ```tsx
 function SmartComponent() {
-  const selectionManager = useInitializeSelectionManager({/* ... */});
+  const selectionManager = useInitializeSelectionManager({
+    /* ... */
+  });
 
   // 👀 Watch for specific state changes
   useEffect(() => {
     return selectionManager.observeStateChange(
-      (state) => state.isSelecting.type,  // Watch selection type
+      (state) => state.isSelecting.type, // Watch selection type
       (type) => {
         if (type !== "none") {
           console.log("Started selecting!");
@@ -1200,7 +1330,7 @@ function SmartComponent() {
           return () => console.log("Stopped selecting!");
         }
       },
-      true  // Run immediately with current state
+      true, // Run immediately with current state
     );
   }, [selectionManager]);
 
@@ -1212,10 +1342,12 @@ function SmartComponent() {
         if (hovering.type === "cell") {
           console.log(`Hovering over cell ${hovering.row},${hovering.col}`);
         } else if (hovering.type === "header") {
-          console.log(`Hovering over ${hovering.headerType} header ${hovering.index}`);
+          console.log(
+            `Hovering over ${hovering.headerType} header ${hovering.index}`,
+          );
         }
       },
-      true
+      true,
     );
   }, [selectionManager]);
 }
@@ -1225,16 +1357,21 @@ function SmartComponent() {
 
 ```tsx
 function CustomStyledCell({ row, col, selectionManager }) {
-  const borders = useSelectionManager(
-    selectionManager,
-    () => selectionManager.selectionBorders({ row, col })
+  const borders = useSelectionManager(selectionManager, () =>
+    selectionManager.selectionBorders({ row, col }),
   );
 
   const customStyle = {
-    borderLeft: borders.includes('left') ? '2px solid #ff4081' : '1px solid #ddd',
-    borderRight: borders.includes('right') ? '2px solid #ff4081' : '1px solid #ddd',
-    borderTop: borders.includes('top') ? '2px solid #ff4081' : '1px solid #ddd',
-    borderBottom: borders.includes('bottom') ? '2px solid #ff4081' : '1px solid #ddd',
+    borderLeft: borders.includes("left")
+      ? "2px solid #ff4081"
+      : "1px solid #ddd",
+    borderRight: borders.includes("right")
+      ? "2px solid #ff4081"
+      : "1px solid #ddd",
+    borderTop: borders.includes("top") ? "2px solid #ff4081" : "1px solid #ddd",
+    borderBottom: borders.includes("bottom")
+      ? "2px solid #ff4081"
+      : "1px solid #ddd",
   };
 
   return <div style={customStyle}>Custom styled cell!</div>;
@@ -1244,11 +1381,13 @@ function CustomStyledCell({ row, col, selectionManager }) {
 ## 🏆 Performance Tips
 
 ### 🚀 For Small Grids (< 1000 cells)
+
 - Use the React hooks approach with `useSelectionManager`
 - Manual event handlers are fine
 - Easy to debug and understand
 
 ### ⚡ For Large Grids (> 1000 cells)
+
 - Use `setupCellElement` and `setupHeaderElement`
 - Individual components with `React.memo`
 - `useCallback` for refs (critical!)
@@ -1257,11 +1396,15 @@ function CustomStyledCell({ row, col, selectionManager }) {
 ### 🎯 Best Practices
 
 1. **Always use `useCallback` for refs**:
+
    ```tsx
    // ✅ Good
-   const cellRef = useCallback((el) => {
-     if (el) return selectionManager.setupCellElement(el, { row, col });
-   }, [row, col, selectionManager]);
+   const cellRef = useCallback(
+     (el) => {
+       if (el) return selectionManager.setupCellElement(el, { row, col });
+     },
+     [row, col, selectionManager],
+   );
 
    // ❌ Bad - creates new function every render
    const cellRef = (el) => {
@@ -1270,15 +1413,17 @@ function CustomStyledCell({ row, col, selectionManager }) {
    ```
 
 2. **Set up focus correctly**:
+
    ```tsx
-   <div 
+   <div
      ref={setContainerElement}
-     tabIndex={0}              // 🔑 Required for keyboard events
-     style={{ outline: 'none' }} // 🎨 Remove ugly focus outline
+     tabIndex={0} // 🔑 Required for keyboard events
+     style={{ outline: "none" }} // 🎨 Remove ugly focus outline
    />
    ```
 
 3. **Use specific selectors**:
+
    ```tsx
    // ✅ Good - only re-renders when selections change
    const selections = useSelectionManager(sm, (state) => state.selections);
@@ -1292,8 +1437,9 @@ function CustomStyledCell({ row, col, selectionManager }) {
 SelectionManager makes building grid interfaces fun instead of frustrating. Whether you're creating a simple data table or the next Excel competitor, we've got the tools to make it happen smoothly.
 
 **Quick links:**
+
 - 🌟 [Star us on GitHub](https://github.com/ricsam/selection-manager)
-- 🐛 [Report issues](https://github.com/ricsam/selection-manager/issues) 
+- 🐛 [Report issues](https://github.com/ricsam/selection-manager/issues)
 
 Now go build something amazing! 🚀✨
 

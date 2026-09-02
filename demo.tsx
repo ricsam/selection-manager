@@ -387,6 +387,8 @@ function Test3() {
       isSelecting: { type: "none" },
       isEditing: { type: "none" },
       isHovering: { type: "none" },
+      selectionMode: "primary",
+      referenceSelection: { type: "none" },
     },
   );
 
@@ -425,6 +427,8 @@ function Test3() {
             },
             isEditing: { type: "none" },
             isHovering: { type: "none" },
+            selectionMode: "primary",
+            referenceSelection: { type: "none" },
           })
         }
         style={{ marginTop: 8, padding: "4px 8px" }}
@@ -441,6 +445,8 @@ function Test3() {
             },
             isEditing: { type: "none" },
             isHovering: { type: "none" },
+            selectionMode: "primary",
+            referenceSelection: { type: "none" },
           })
         }
         style={{ marginTop: 8, marginLeft: 8, padding: "4px 8px" }}
@@ -502,6 +508,8 @@ function Test5() {
       isSelecting: { type: "none" },
       isEditing: { type: "none" },
       isHovering: { type: "none" },
+      selectionMode: "primary",
+      referenceSelection: { type: "none" },
     });
 
   const selectionManager = useInitializeSelectionManager({
@@ -538,6 +546,8 @@ function Test5() {
             isSelecting: { type: "none" },
             isEditing: { type: "none" },
             isHovering: { type: "none" },
+            selectionMode: "primary",
+            referenceSelection: { type: "none" },
           })
         }
         style={{ marginTop: 8, padding: "4px 8px" }}
@@ -560,6 +570,8 @@ function Test5() {
             isSelecting: { type: "none" },
             isEditing: { type: "none" },
             isHovering: { type: "none" },
+            selectionMode: "primary",
+            referenceSelection: { type: "none" },
           })
         }
         style={{ marginTop: 8, marginLeft: 8, padding: "4px 8px" }}
@@ -574,6 +586,8 @@ function Test5() {
             isSelecting: { type: "none" },
             isEditing: { type: "none" },
             isHovering: { type: "none" },
+            selectionMode: "primary",
+            referenceSelection: { type: "none" },
           })
         }
         style={{ marginTop: 8, marginLeft: 8, padding: "4px 8px" }}

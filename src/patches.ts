@@ -1,4 +1,13 @@
-import type { SelectionManagerState, SMArea, IsSelecting, IsEditing, IsHovering, StatePatch } from "./types";
+import type {
+  SelectionManagerState,
+  SMArea,
+  IsSelecting,
+  IsEditing,
+  IsHovering,
+  ReferenceSelectionState,
+  SelectionMode,
+  StatePatch,
+} from "./types";
 
 // StatePatch type is now defined in types.ts
 
@@ -11,45 +20,57 @@ export const createPatch = {
     path: "hasFocus",
     value,
   }),
-  
+
   setSelections: (selections: SMArea[]): StatePatch => ({
-    op: "replace", 
+    op: "replace",
     path: "selections",
     value: selections,
   }),
-  
+
   addSelection: (selection: SMArea, index?: number): StatePatch => ({
     op: "add",
     path: index !== undefined ? `selections/${index}` : "selections/-",
     value: selection,
   }),
-  
+
   removeSelection: (index: number): StatePatch => ({
     op: "remove",
     path: `selections/${index}`,
   }),
-  
+
   clearSelections: (): StatePatch => ({
     op: "replace",
-    path: "selections", 
+    path: "selections",
     value: [],
   }),
-  
+
   setIsSelecting: (value: IsSelecting): StatePatch => ({
     op: "replace",
     path: "isSelecting",
     value,
   }),
-  
+
   setIsEditing: (value: IsEditing): StatePatch => ({
-    op: "replace", 
+    op: "replace",
     path: "isEditing",
     value,
   }),
-  
+
   setIsHovering: (value: IsHovering): StatePatch => ({
     op: "replace",
-    path: "isHovering", 
+    path: "isHovering",
+    value,
+  }),
+
+  setSelectionMode: (value: SelectionMode): StatePatch => ({
+    op: "replace",
+    path: "selectionMode",
+    value,
+  }),
+
+  setReferenceSelection: (value: ReferenceSelectionState): StatePatch => ({
+    op: "replace",
+    path: "referenceSelection",
     value,
   }),
 };
@@ -66,7 +87,7 @@ function deepEqual(a: any, b: any): boolean {
  */
 export function createPatches(
   prevState: SelectionManagerState,
-  nextState: SelectionManagerState
+  nextState: SelectionManagerState,
 ): StatePatch[] {
   const patches: StatePatch[] = [];
 
@@ -102,7 +123,9 @@ export function createPatches(
       // Find which index was removed
       let removedIndex = -1;
       for (let i = 0; i < prevSelections.length; i++) {
-        const isRemoved = !nextSelections.some(sel => deepEqual(sel, prevSelections[i]));
+        const isRemoved = !nextSelections.some((sel) =>
+          deepEqual(sel, prevSelections[i]),
+        );
         if (isRemoved) {
           removedIndex = i;
           break;
@@ -150,6 +173,16 @@ export function createPatches(
     patches.push(createPatch.setIsHovering(nextState.isHovering));
   }
 
+  if (prevState.selectionMode !== nextState.selectionMode) {
+    patches.push(createPatch.setSelectionMode(nextState.selectionMode));
+  }
+
+  if (!deepEqual(prevState.referenceSelection, nextState.referenceSelection)) {
+    patches.push(
+      createPatch.setReferenceSelection(nextState.referenceSelection),
+    );
+  }
+
   return patches;
 }
 
@@ -157,14 +190,14 @@ export function createPatches(
  * Gets a value from state using a path
  */
 function getValue(state: SelectionManagerState, path: string): any {
-  const parts = path.split('/');
+  const parts = path.split("/");
   let current: any = state;
-  
+
   for (const part of parts) {
     if (current == null) return undefined;
     current = current[part];
   }
-  
+
   return current;
 }
 
@@ -172,39 +205,53 @@ function getValue(state: SelectionManagerState, path: string): any {
  * Sets a value in state using a path (immutably)
  */
 function setValue(
-  state: SelectionManagerState, 
-  path: string, 
-  value: boolean | SMArea[] | IsSelecting | IsEditing | IsHovering
+  state: SelectionManagerState,
+  path: string,
+  value:
+    | boolean
+    | SMArea[]
+    | IsSelecting
+    | IsEditing
+    | IsHovering
+    | SelectionMode
+    | ReferenceSelectionState,
 ): SelectionManagerState {
-  const parts = path.split('/');
-  
+  const parts = path.split("/");
+
   if (parts.length === 1) {
     const key = parts[0] as keyof SelectionManagerState;
     // Root property
     switch (key) {
-      case 'hasFocus':
+      case "hasFocus":
         return { ...state, hasFocus: value as boolean };
-      case 'selections':
+      case "selections":
         return { ...state, selections: value as SMArea[] };
-      case 'isSelecting':
+      case "isSelecting":
         return { ...state, isSelecting: value as IsSelecting };
-      case 'isEditing':
+      case "isEditing":
         return { ...state, isEditing: value as IsEditing };
-      case 'isHovering':
+      case "isHovering":
         return { ...state, isHovering: value as IsHovering };
+      case "selectionMode":
+        return { ...state, selectionMode: value as SelectionMode };
+      case "referenceSelection":
+        return {
+          ...state,
+          referenceSelection: value as ReferenceSelectionState,
+        };
       default:
         throw new Error(`Unsupported root property: ${key}`);
     }
   }
-  
+
   // For nested properties, we'd need more complex logic
   // For now, handle the common cases
   const [root, ...rest] = parts;
-  
-  if (root === 'selections' && rest.length === 0) {
+
+  if (root === "selections" && rest.length === 0) {
     return { ...state, selections: value as SMArea[] };
   }
-  
+
   throw new Error(`Unsupported path: ${path}`);
 }
 
@@ -213,7 +260,7 @@ function setValue(
  */
 export function applyPatches(
   state: SelectionManagerState,
-  patches: StatePatch[]
+  patches: StatePatch[],
 ): SelectionManagerState {
   let newState = { ...state };
 
@@ -222,22 +269,22 @@ export function applyPatches(
       case "replace":
         newState = setValue(newState, patch.path, patch.value);
         break;
-        
+
       case "add":
-        if (patch.path.endsWith('/-')) {
+        if (patch.path.endsWith("/-")) {
           // Add to end of array
           const arrayPath = patch.path.slice(0, -2);
           const currentArray = getValue(newState, arrayPath) as any[];
           const newArray = [...currentArray, patch.value];
           newState = setValue(newState, arrayPath, newArray);
-        } else if (patch.path.includes('/')) {
+        } else if (patch.path.includes("/")) {
           // Add at specific index
-          const lastSlash = patch.path.lastIndexOf('/');
+          const lastSlash = patch.path.lastIndexOf("/");
           const arrayPath = patch.path.slice(0, lastSlash);
           const indexStr = patch.path.slice(lastSlash + 1);
           const index = parseInt(indexStr, 10);
-          
-          if (arrayPath === 'selections' && !isNaN(index)) {
+
+          if (arrayPath === "selections" && !isNaN(index)) {
             const currentArray = [...newState.selections];
             currentArray.splice(index, 0, patch.value);
             newState = { ...newState, selections: currentArray };
@@ -248,15 +295,15 @@ export function applyPatches(
           throw new Error(`Unsupported add path: ${patch.path}`);
         }
         break;
-        
+
       case "remove":
-        if (patch.path.includes('/')) {
-          const lastSlash = patch.path.lastIndexOf('/');
+        if (patch.path.includes("/")) {
+          const lastSlash = patch.path.lastIndexOf("/");
           const arrayPath = patch.path.slice(0, lastSlash);
           const indexStr = patch.path.slice(lastSlash + 1);
           const index = parseInt(indexStr, 10);
-          
-          if (arrayPath === 'selections' && !isNaN(index)) {
+
+          if (arrayPath === "selections" && !isNaN(index)) {
             const currentArray = [...newState.selections];
             currentArray.splice(index, 1);
             newState = { ...newState, selections: currentArray };
@@ -267,14 +314,16 @@ export function applyPatches(
           throw new Error(`Unsupported remove path: ${patch.path}`);
         }
         break;
-        
+
       case "test":
         const currentValue = getValue(newState, patch.path);
         if (!deepEqual(currentValue, patch.value)) {
-          throw new Error(`Test failed at path ${patch.path}: expected ${JSON.stringify(patch.value)}, got ${JSON.stringify(currentValue)}`);
+          throw new Error(
+            `Test failed at path ${patch.path}: expected ${JSON.stringify(patch.value)}, got ${JSON.stringify(currentValue)}`,
+          );
         }
         break;
-        
+
       default:
         throw new Error(`Unsupported patch operation: ${(patch as any).op}`);
     }
@@ -289,10 +338,10 @@ export function applyPatches(
  */
 export function buildPatch(
   prevState: SelectionManagerState,
-  nextState: SelectionManagerState
+  nextState: SelectionManagerState,
 ): StatePatch {
   const patches = createPatches(prevState, nextState);
-  
+
   if (patches.length === 0) {
     // Return a no-op test patch
     return { op: "test", path: "hasFocus", value: prevState.hasFocus };

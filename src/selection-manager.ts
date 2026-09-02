@@ -7,13 +7,22 @@ import type {
   IsHovering,
   IsSelecting,
   MaybeInfNumber,
+  NavigationRequest,
   PasteEvent,
   RealNumber,
+  ReferencePickingOptions,
+  ReferenceSelectionEvent,
+  ReferenceSelectionState,
   ReadonlyCellPredicate,
+  SelectionMode,
   SelectionManagerOptions,
   SelectionManagerState,
+  SMCell,
   SMArea,
+  SMDirection,
+  SMTable,
   StatePatch,
+  ViewportRequest,
 } from "./types";
 import { parseCSVContent, type Format } from "./utils";
 
@@ -36,12 +45,23 @@ export class SelectionManager {
   isSelecting: IsSelecting = { type: "none" };
   isEditing: IsEditing = { type: "none" };
   isHovering: IsHovering = { type: "none" };
+  selectionMode: SelectionMode = "primary";
+  referenceSelection: ReferenceSelectionState = { type: "none" };
   controlled = false;
 
   key = String(Math.random());
 
   private readonly formats: Format[];
   private readonly isCellReadonlyPredicate: ReadonlyCellPredicate;
+  private readonly getUsedRangeProvider: () => SMArea | undefined;
+  private readonly getTableAtProvider: (cell: SMCell) => SMTable | undefined;
+  private readonly resolveNavigationTargetProvider:
+    | ((request: NavigationRequest) => SMCell | undefined)
+    | undefined;
+  private referenceSelectionContext: Pick<
+    ReferencePickingOptions,
+    "id" | "editedRange"
+  > = {};
 
   constructor(
     public getNumRows: () => MaybeInfNumber,
@@ -56,6 +76,12 @@ export class SelectionManager {
     this.formats = normalizedOptions.formats ?? ["csv", "tsv"];
     this.isCellReadonlyPredicate =
       normalizedOptions.isCellReadonly ?? (() => false);
+    this.getUsedRangeProvider =
+      normalizedOptions.navigation?.getUsedRange ?? (() => undefined);
+    this.getTableAtProvider =
+      normalizedOptions.navigation?.getTableAt ?? (() => undefined);
+    this.resolveNavigationTargetProvider =
+      normalizedOptions.navigation?.resolveTarget;
   }
 
   getState(): SelectionManagerState {
@@ -65,6 +91,8 @@ export class SelectionManager {
       isSelecting: this.isSelecting,
       isEditing: this.isEditing,
       isHovering: this.isHovering,
+      selectionMode: this.selectionMode,
+      referenceSelection: this.referenceSelection,
     };
   }
 
@@ -75,10 +103,17 @@ export class SelectionManager {
   ) {
     const state =
       typeof _state === "function" ? _state(this.getState()) : _state;
-    this.hasFocus = state.hasFocus ?? this.hasFocus;
-    this.selections = state.selections ?? this.selections;
-    this.isSelecting = state.isSelecting ?? this.isSelecting;
-    this.isHovering = state.isHovering ?? this.isHovering;
+    if (state.hasFocus !== undefined) this.hasFocus = state.hasFocus;
+    if (state.selections !== undefined) this.selections = state.selections;
+    if (state.isSelecting !== undefined) this.isSelecting = state.isSelecting;
+    if (state.isEditing !== undefined) this.isEditing = state.isEditing;
+    if (state.isHovering !== undefined) this.isHovering = state.isHovering;
+    if (state.selectionMode !== undefined) {
+      this.selectionMode = state.selectionMode;
+    }
+    if (state.referenceSelection !== undefined) {
+      this.referenceSelection = state.referenceSelection;
+    }
   }
 
   nextStateListeners: ((state: SelectionManagerState) => void)[] = [];
@@ -134,6 +169,124 @@ export class SelectionManager {
     this.prevState = state;
   }
 
+  private referenceSelectionListeners: ((
+    event: ReferenceSelectionEvent,
+  ) => void)[] = [];
+
+  listenToReferenceSelection(
+    callback: (event: ReferenceSelectionEvent) => void,
+  ) {
+    this.referenceSelectionListeners.push(callback);
+    return () => {
+      this.referenceSelectionListeners =
+        this.referenceSelectionListeners.filter(
+          (listener) => listener !== callback,
+        );
+    };
+  }
+
+  private emitReferenceSelection(event: ReferenceSelectionEvent) {
+    this.referenceSelectionListeners.forEach((listener) => listener(event));
+  }
+
+  beginReferenceSelection(options: ReferencePickingOptions = {}) {
+    this.willMaybeUpdate();
+    this.referenceSelectionContext = {
+      ...(options.id === undefined ? {} : { id: options.id }),
+      ...(options.editedRange === undefined
+        ? {}
+        : { editedRange: options.editedRange }),
+    };
+    this.selectionMode = "reference";
+    this.referenceSelection = options.initialRange
+      ? {
+          type: "selected",
+          range: options.initialRange,
+          ...this.referenceSelectionContext,
+        }
+      : { type: "none" };
+    this.onUpdate();
+  }
+
+  endReferenceSelection(options: { clear?: boolean } = {}) {
+    this.willMaybeUpdate();
+    this.selectionMode = "primary";
+    if (options.clear ?? true) {
+      this.referenceSelection = { type: "none" };
+      this.referenceSelectionContext = {};
+    }
+    this.onUpdate();
+  }
+
+  cancelReferenceSelection() {
+    const previous = this.referenceSelection;
+    const context = this.referenceSelectionContext;
+    this.willMaybeUpdate();
+    this.selectionMode = "primary";
+    this.referenceSelection = { type: "none" };
+    this.referenceSelectionContext = {};
+    this.onUpdate();
+    this.emitReferenceSelection({
+      phase: "cancel",
+      ...(previous.type === "none" ? {} : { range: previous.range }),
+      ...context,
+    });
+  }
+
+  getReferenceSelection(): SMArea | undefined {
+    return this.referenceSelection.type === "none"
+      ? undefined
+      : this.referenceSelection.range;
+  }
+
+  isCellInReferenceSelection(cell: SMCell) {
+    const selection = this.getReferenceSelection();
+    return selection ? this.cellInSelection(cell, selection) : false;
+  }
+
+  referenceSelectionBorders(cell: SMCell): Border[] {
+    const selection = this.getReferenceSelection();
+    if (!selection || !this.cellInSelection(cell, selection)) {
+      return [];
+    }
+
+    const startRow = this.min(selection.start.row, selection.end.row);
+    const endRow = this.normalizeEndBound(
+      this.max(selection.start.row, selection.end.row),
+      this.getNumRows(),
+    );
+    const startCol = this.min(selection.start.col, selection.end.col);
+    const endCol = this.normalizeEndBound(
+      this.max(selection.start.col, selection.end.col),
+      this.getNumCols(),
+    );
+    const borders: Border[] = [];
+    if (cell.row === startRow) borders.push("top");
+    if (endRow.type === "number" && cell.row === endRow.value) {
+      borders.push("bottom");
+    }
+    if (cell.col === startCol) borders.push("left");
+    if (endCol.type === "number" && cell.col === endCol.value) {
+      borders.push("right");
+    }
+    return borders;
+  }
+
+  private startReferencePointerSelection(range: SMArea) {
+    const next: ReferenceSelectionState = {
+      type: "selecting",
+      range,
+      ...this.referenceSelectionContext,
+    };
+    this.referenceSelection = next;
+    this.onUpdate();
+    this.emitReferenceSelection({
+      phase: "start",
+      range,
+      ...this.referenceSelectionContext,
+    });
+  }
+
   cellMouseDown(
     row: number,
     col: number,
@@ -144,6 +297,17 @@ export class SelectionManager {
       isFillHandle: boolean;
     },
   ) {
+    if (this.selectionMode === "reference") {
+      this.willMaybeUpdate();
+      this.startReferencePointerSelection({
+        start: { row, col },
+        end: {
+          row: { type: "number", value: row },
+          col: { type: "number", value: col },
+        },
+      });
+      return;
+    }
     const cmdKey = options.metaKey || options.ctrlKey;
     this.willMaybeUpdate();
     if (this.isEditing.type === "cell" && !this.editingInputElement) {
@@ -199,6 +363,12 @@ export class SelectionManager {
 
   isCellInDragArea(cell: { row: number; col: number }) {
     const { row, col } = cell;
+    if (
+      this.selectionMode === "reference" &&
+      this.referenceSelection.type === "selecting"
+    ) {
+      return this.cellInSelection(cell, this.referenceSelection.range);
+    }
     if (this.isSelecting.type === "none") {
       return false;
     }
@@ -372,6 +542,35 @@ export class SelectionManager {
 
   cellMouseEnter(row: number, col: number) {
     this.willMaybeUpdate();
+    if (this.selectionMode === "reference") {
+      const group = this.findGroupContainingCell({ row, col });
+      this.isHovering = group
+        ? { type: "group", group }
+        : { type: "cell", row, col };
+      if (this.referenceSelection.type !== "selecting") {
+        this.onUpdate();
+        return;
+      }
+      const range: SMArea = {
+        start: this.referenceSelection.range.start,
+        end: {
+          row: { type: "number", value: row },
+          col: { type: "number", value: col },
+        },
+      };
+      this.referenceSelection = {
+        type: "selecting",
+        range,
+        ...this.referenceSelectionContext,
+      };
+      this.onUpdate();
+      this.emitReferenceSelection({
+        phase: "change",
+        range,
+        ...this.referenceSelectionContext,
+      });
+      return;
+    }
     if (this.isSelecting.type !== "none") {
       if (this.isSelecting.type === "fill") {
         const fillHandleSelection = this.getFillHandleSelection(
@@ -401,6 +600,9 @@ export class SelectionManager {
   }
 
   editCell(row: number, col: number, initialValue?: string) {
+    if (this.selectionMode === "reference") {
+      return;
+    }
     if (this.isCellReadonly(row, col)) {
       return;
     }
@@ -444,6 +646,9 @@ export class SelectionManager {
   }
 
   canCellHaveFillHandle(cell: { row: number; col: number }) {
+    if (this.selectionMode === "reference") {
+      return false;
+    }
     if (!this.isSelected(cell)) {
       return false;
     }
@@ -481,6 +686,26 @@ export class SelectionManager {
     options: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean },
   ) {
     this.willMaybeUpdate();
+    if (this.selectionMode === "reference") {
+      const range: SMArea =
+        type === "row"
+          ? {
+              start: { row: index, col: 0 },
+              end: {
+                row: { type: "number", value: index },
+                col: this.getActualEndCol(),
+              },
+            }
+          : {
+              start: { row: 0, col: index },
+              end: {
+                row: this.getActualEndRow(),
+                col: { type: "number", value: index },
+              },
+            };
+      this.startReferencePointerSelection(range);
+      return;
+    }
     const lastSelection = this.selections[this.selections.length - 1];
 
     const actualEndRow = this.getActualEndRow();
@@ -542,6 +767,41 @@ export class SelectionManager {
     this.willMaybeUpdate();
     const actualEndCol = this.getActualEndCol();
     const actualEndRow = this.getActualEndRow();
+    if (this.selectionMode === "reference") {
+      this.isHovering = { type: "header", index, headerType: type };
+      if (this.referenceSelection.type !== "selecting") {
+        this.onUpdate();
+        return;
+      }
+      const range: SMArea =
+        type === "row"
+          ? {
+              start: this.referenceSelection.range.start,
+              end: {
+                row: { type: "number", value: index },
+                col: actualEndCol,
+              },
+            }
+          : {
+              start: this.referenceSelection.range.start,
+              end: {
+                row: actualEndRow,
+                col: { type: "number", value: index },
+              },
+            };
+      this.referenceSelection = {
+        type: "selecting",
+        range,
+        ...this.referenceSelectionContext,
+      };
+      this.onUpdate();
+      this.emitReferenceSelection({
+        phase: "change",
+        range,
+        ...this.referenceSelectionContext,
+      });
+      return;
+    }
     const fillHandleBaseSelection = this.getFillHandleBaseSelection();
     if (this.isSelecting.type !== "none") {
       this.isSelecting.start = fillHandleBaseSelection
@@ -568,6 +828,10 @@ export class SelectionManager {
   }
 
   cancelSelection() {
+    if (this.selectionMode === "reference") {
+      this.cancelReferenceSelection();
+      return;
+    }
     this.willMaybeUpdate();
     this.isSelecting = { type: "none" };
     this.onUpdate();
@@ -584,6 +848,145 @@ export class SelectionManager {
     return numCols.type === "infinity"
       ? { type: "infinity" }
       : { type: "number", value: numCols.value - 1 };
+  }
+
+  /** Returns the complete selectable grid, or undefined for an empty axis. */
+  getGridBounds(): SMArea | undefined {
+    const rows = this.getNumRows();
+    const cols = this.getNumCols();
+    if (
+      (rows.type === "number" && rows.value <= 0) ||
+      (cols.type === "number" && cols.value <= 0)
+    ) {
+      return undefined;
+    }
+    return {
+      start: { row: 0, col: 0 },
+      end: {
+        row:
+          rows.type === "infinity"
+            ? { type: "infinity" }
+            : { type: "number", value: rows.value - 1 },
+        col:
+          cols.type === "infinity"
+            ? { type: "infinity" }
+            : { type: "number", value: cols.value - 1 },
+      },
+    };
+  }
+
+  getUsedRange(): SMArea | undefined {
+    return this.getUsedRangeProvider();
+  }
+
+  getTableAt(cell?: SMCell): SMTable | undefined {
+    const target = cell ?? this.getTopLeftCellInSelection();
+    return target ? this.getTableAtProvider(target) : undefined;
+  }
+
+  private clampNavigationCell(cell: SMCell, bounds: SMArea): SMCell {
+    const maxRow = this.max(bounds.start.row, bounds.end.row);
+    const maxCol = this.max(bounds.start.col, bounds.end.col);
+    return {
+      row: Math.max(
+        this.min(bounds.start.row, bounds.end.row),
+        maxRow.type === "infinity"
+          ? cell.row
+          : Math.min(cell.row, maxRow.value),
+      ),
+      col: Math.max(
+        this.min(bounds.start.col, bounds.end.col),
+        maxCol.type === "infinity"
+          ? cell.col
+          : Math.min(cell.col, maxCol.value),
+      ),
+    };
+  }
+
+  private getDirectionalTargetInArea(
+    origin: SMCell,
+    direction: SMDirection,
+    area: SMArea,
+  ): SMCell | undefined {
+    const startRow = this.min(area.start.row, area.end.row);
+    const endRow = this.max(area.start.row, area.end.row);
+    const startCol = this.min(area.start.col, area.end.col);
+    const endCol = this.max(area.start.col, area.end.col);
+
+    if (direction === "up" && startRow <= origin.row) {
+      return { row: startRow, col: origin.col };
+    }
+    if (
+      direction === "down" &&
+      endRow.type === "number" &&
+      endRow.value >= origin.row
+    ) {
+      return { row: endRow.value, col: origin.col };
+    }
+    if (direction === "left" && startCol <= origin.col) {
+      return { row: origin.row, col: startCol };
+    }
+    if (
+      direction === "right" &&
+      endCol.type === "number" &&
+      endCol.value >= origin.col
+    ) {
+      return { row: origin.row, col: endCol.value };
+    }
+    return undefined;
+  }
+
+  /** Resolves a finite target cell for step or semantic jump navigation. */
+  getNavigationTarget(request: NavigationRequest): SMCell | undefined {
+    const resolved = this.resolveNavigationTargetProvider?.(request);
+    if (resolved) {
+      return this.clampNavigationCell(resolved, request.gridBounds);
+    }
+
+    if (request.kind === "step") {
+      const delta = {
+        row:
+          request.direction === "up"
+            ? -1
+            : request.direction === "down"
+              ? 1
+              : 0,
+        col:
+          request.direction === "left"
+            ? -1
+            : request.direction === "right"
+              ? 1
+              : 0,
+      };
+      return this.clampNavigationCell(
+        {
+          row: request.origin.row + delta.row,
+          col: request.origin.col + delta.col,
+        },
+        request.gridBounds,
+      );
+    }
+
+    const candidates = [
+      request.table?.dataBounds,
+      request.table?.bounds,
+      request.usedRange,
+      request.gridBounds,
+    ];
+    for (const area of candidates) {
+      if (!area) continue;
+      const target = this.getDirectionalTargetInArea(
+        request.origin,
+        request.direction,
+        area,
+      );
+      if (target) {
+        return this.clampNavigationCell(target, request.gridBounds);
+      }
+    }
+
+    // Down/right in an unbounded grid cannot be represented by a finite cell.
+    return this.clampNavigationCell(request.origin, request.gridBounds);
   }
 
   /**
@@ -1785,6 +2188,11 @@ export class SelectionManager {
     this.willMaybeUpdate();
     // handle escape key
     if (event.key === "Escape") {
+      if (this.selectionMode === "reference") {
+        event.preventDefault();
+        this.cancelReferenceSelection();
+        return;
+      }
       if (this.isEditing.type === "cell") {
         this.cancelEditing();
         return;
@@ -1821,6 +2229,10 @@ export class SelectionManager {
       if (shouldUpdate) {
         this.onUpdate();
       }
+      return;
+    }
+
+    if (this.selectionMode === "reference") {
       return;
     }
 
@@ -1863,65 +2275,6 @@ export class SelectionManager {
       const cell = this.getTopLeftCellInSelection();
       if (cell) {
         this.editCell(cell.row, cell.col);
-      }
-      return;
-    }
-
-    // handle cmd + shift + arrow key to select all cells in the direction of the arrow key
-    if (
-      (event.metaKey || event.ctrlKey) &&
-      event.shiftKey &&
-      (event.key === "ArrowUp" ||
-        event.key === "ArrowDown" ||
-        event.key === "ArrowLeft" ||
-        event.key === "ArrowRight")
-    ) {
-      let shouldUpdate = false;
-      const lastSelection = this.selections[this.selections.length - 1];
-      if (!lastSelection) {
-        return;
-      }
-      if (event.key === "ArrowUp") {
-        if (
-          this.gt(lastSelection.end.row, {
-            type: "number",
-            value: 0,
-          })
-        ) {
-          lastSelection.end.row = { type: "number", value: 0 };
-          shouldUpdate = true;
-        }
-      }
-      if (event.key === "ArrowDown") {
-        const numRows = this.getNumRows();
-        const maxRow: MaybeInfNumber =
-          numRows.type === "infinity"
-            ? { type: "infinity" }
-            : { type: "number", value: numRows.value - 1 };
-        if (this.lt(lastSelection.end.row, maxRow)) {
-          lastSelection.end.row = maxRow;
-          shouldUpdate = true;
-        }
-      }
-      if (event.key === "ArrowLeft") {
-        if (this.gt(lastSelection.end.col, { type: "number", value: 0 })) {
-          lastSelection.end.col = { type: "number", value: 0 };
-          shouldUpdate = true;
-        }
-      }
-      if (event.key === "ArrowRight") {
-        const numCols = this.getNumCols();
-        const maxCol: MaybeInfNumber =
-          numCols.type === "infinity"
-            ? { type: "infinity" }
-            : { type: "number", value: numCols.value - 1 };
-        if (this.lt(lastSelection.end.col, maxCol)) {
-          lastSelection.end.col = maxCol;
-          shouldUpdate = true;
-        }
-      }
-      if (shouldUpdate) {
-        this.onUpdate();
       }
       return;
     }
@@ -1975,17 +2328,21 @@ export class SelectionManager {
       return;
     }
 
-    // handle arrow keys for navigation and selection
+    // Handle step and semantic jump navigation. Enter and Tab remain aliases
+    // for one-cell movement, even when a modifier key is held.
     {
       let key = event.key;
-      let shiftKey = event.shiftKey;
+      let extend = event.shiftKey;
+      let canJump = true;
       if (event.key === "Enter") {
         key = event.shiftKey ? "ArrowUp" : "ArrowDown";
-        shiftKey = false;
+        extend = false;
+        canJump = false;
       }
       if (event.key === "Tab") {
         key = event.shiftKey ? "ArrowLeft" : "ArrowRight";
-        shiftKey = false;
+        extend = false;
+        canJump = false;
       }
       if (
         key === "ArrowUp" ||
@@ -1993,101 +2350,93 @@ export class SelectionManager {
         key === "ArrowLeft" ||
         key === "ArrowRight"
       ) {
-        let shouldUpdate = false;
+        const gridBounds = this.getGridBounds();
+        if (!gridBounds) return;
 
-        // Get the current active position (start of last selection, or 0,0 if no selection)
         const lastSelection = this.selections[this.selections.length - 1];
-        const currentRow: MaybeInfNumber = lastSelection
-          ? shiftKey
+        const jump = canJump && (event.metaKey || event.ctrlKey);
+        if (jump && extend && !lastSelection) return;
+
+        const focusRow =
+          extend && lastSelection
             ? lastSelection.end.row
-            : { type: "number", value: lastSelection.start.row }
-          : { type: "number", value: 0 };
-        const currentCol: MaybeInfNumber = lastSelection
-          ? shiftKey
+            : lastSelection
+              ? { type: "number" as const, value: lastSelection.start.row }
+              : { type: "number" as const, value: 0 };
+        const focusCol =
+          extend && lastSelection
             ? lastSelection.end.col
-            : { type: "number", value: lastSelection.start.col }
-          : { type: "number", value: 0 };
+            : lastSelection
+              ? { type: "number" as const, value: lastSelection.start.col }
+              : { type: "number" as const, value: 0 };
+        const origin: SMCell = {
+          row:
+            focusRow.type === "number"
+              ? focusRow.value
+              : (lastSelection?.start.row ?? 0),
+          col:
+            focusCol.type === "number"
+              ? focusCol.value
+              : (lastSelection?.start.col ?? 0),
+        };
+        const direction: SMDirection =
+          key === "ArrowUp"
+            ? "up"
+            : key === "ArrowDown"
+              ? "down"
+              : key === "ArrowLeft"
+                ? "left"
+                : "right";
+        const kind = jump ? "jump" : "step";
+        const usedRange = this.getUsedRange();
+        const table = this.getTableAt(origin);
+        const request: NavigationRequest = {
+          origin,
+          direction,
+          kind,
+          extend,
+          gridBounds,
+          ...(usedRange ? { usedRange } : {}),
+          ...(table ? { table } : {}),
+        };
+        const target = this.getNavigationTarget(request);
+        if (!target) return;
 
-        // Calculate new position based on arrow key
-        let newRow = currentRow;
-        let newCol = currentCol;
-
-        const numRows = this.getNumRows();
-        const numCols = this.getNumCols();
-
-        if (
-          key === "ArrowUp" &&
-          this.gt(newRow, { type: "number", value: 0 })
-        ) {
-          if (newRow.type === "number") {
-            newRow = { type: "number", value: newRow.value - 1 };
+        const changed = target.row !== origin.row || target.col !== origin.col;
+        if (changed) {
+          if (extend && lastSelection) {
+            lastSelection.end = {
+              row: { type: "number", value: target.row },
+              col: { type: "number", value: target.col },
+            };
           } else {
-            newRow = { type: "infinity" };
-          }
-        } else if (
-          key === "ArrowDown" &&
-          this.lt(
-            newRow,
-            numRows.type === "infinity"
-              ? { type: "infinity" }
-              : { type: "number", value: numRows.value - 1 },
-          )
-        ) {
-          if (newRow.type === "number") {
-            newRow = { type: "number", value: newRow.value + 1 };
-          } else {
-            newRow = { type: "infinity" };
-          }
-        } else if (
-          key === "ArrowLeft" &&
-          this.gt(newCol, { type: "number", value: 0 })
-        ) {
-          if (newCol.type === "number") {
-            newCol = { type: "number", value: newCol.value - 1 };
-          } else {
-            newCol = { type: "infinity" };
-          }
-        } else if (
-          key === "ArrowRight" &&
-          this.lt(
-            newCol,
-            numCols.type === "infinity"
-              ? { type: "infinity" }
-              : { type: "number", value: numCols.value - 1 },
-          )
-        ) {
-          if (newCol.type === "number") {
-            newCol = { type: "number", value: newCol.value + 1 };
-          } else {
-            newCol = { type: "infinity" };
-          }
-        }
-
-        // If position changed
-        if (newRow !== currentRow || newCol !== currentCol) {
-          if (shiftKey && lastSelection) {
-            // Extend current selection
-            lastSelection.end = { row: newRow, col: newCol };
-            shouldUpdate = true;
-          } else {
-            if (newRow.type === "infinity" || newCol.type === "infinity") {
-              throw new Error("Invalid newRow or newCol");
-            }
-            // Create new single-cell selection
             this.selections = [
               {
-                start: { row: newRow.value, col: newCol.value },
-                end: { row: newRow, col: newCol },
+                start: target,
+                end: {
+                  row: { type: "number", value: target.row },
+                  col: { type: "number", value: target.col },
+                },
               },
             ];
-            shouldUpdate = true;
           }
-        }
-
-        if (shouldUpdate) {
-          event.preventDefault();
           this.onUpdate();
         }
+
+        event.preventDefault();
+        this.emitViewportRequest({
+          type: "reveal-cell",
+          cell: target,
+          direction,
+          align:
+            kind === "step"
+              ? "nearest"
+              : direction === "up" || direction === "left"
+                ? "start"
+                : "end",
+          reason: "keyboard-navigation",
+          kind,
+        });
         return;
       }
     }
@@ -2308,6 +2657,20 @@ export class SelectionManager {
     };
   }
 
+  private viewportRequestListeners: ((request: ViewportRequest) => void)[] = [];
+  listenToViewportRequest(callback: (request: ViewportRequest) => void) {
+    this.viewportRequestListeners.push(callback);
+    return () => {
+      this.viewportRequestListeners = this.viewportRequestListeners.filter(
+        (listener) => listener !== callback,
+      );
+    };
+  }
+
+  private emitViewportRequest(request: ViewportRequest) {
+    this.viewportRequestListeners.forEach((listener) => listener(request));
+  }
+
   private getWritableCellUpdates(updates: CellDataUpdate[]) {
     return updates.filter(
       (update) => !this.isCellReadonly(update.rowIndex, update.colIndex),
@@ -2453,6 +2816,11 @@ export class SelectionManager {
    */
   setupCellElement(el: HTMLElement, cell: { row: number; col: number }) {
     const onMouseDown = (e: MouseEvent) => {
+      if (this.selectionMode === "reference") {
+        // Keep the external formula editor focused while the pointer defines a
+        // reference range in the grid.
+        e.preventDefault();
+      }
       const htmlEl = e.target as HTMLElement;
       const fillHandleBaseSelection = this.getFillHandleBaseSelection();
       const isFillHandle =
@@ -2551,6 +2919,9 @@ export class SelectionManager {
    */
   setupHeaderElement(el: HTMLElement, index: number, type: "row" | "col") {
     const onMouseDown = (e: MouseEvent) => {
+      if (this.selectionMode === "reference") {
+        e.preventDefault();
+      }
       this.headerMouseDown(index, type, {
         shiftKey: e.shiftKey,
         ctrlKey: e.ctrlKey,
@@ -2776,6 +3147,23 @@ export class SelectionManager {
 
   mouseUp() {
     this.willMaybeUpdate();
+    if (this.selectionMode === "reference") {
+      if (this.referenceSelection.type === "selecting") {
+        const range = this.referenceSelection.range;
+        this.referenceSelection = {
+          type: "selected",
+          range,
+          ...this.referenceSelectionContext,
+        };
+        this.onUpdate();
+        this.emitReferenceSelection({
+          phase: "commit",
+          range,
+          ...this.referenceSelectionContext,
+        });
+      }
+      return;
+    }
     if (this.isSelecting.type !== "none") {
       if (this.isSelecting.type === "fill") {
         const fillHandleBaseSelection = this.getFillHandleBaseSelection();
@@ -2897,7 +3285,10 @@ export class SelectionManager {
     );
 
     const inputCaptureCleanup = this.observeStateChange(
-      (state) => state.hasFocus && state.isEditing.type === "none",
+      (state) =>
+        state.hasFocus &&
+        state.isEditing.type === "none" &&
+        state.selectionMode === "primary",
       (focus) => {
         if (focus) {
           const textarea = ownerDocument.createElement("textarea");

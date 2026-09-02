@@ -3,6 +3,7 @@ import { SelectionManager } from "./selection-manager";
 import type {
   MaybeInfNumber,
   ReadonlyCellPredicate,
+  SelectionNavigationModel,
   SelectionManagerState,
   SMArea,
 } from "./types";
@@ -21,11 +22,14 @@ export function useInitializeSelectionManager(props: {
   getGroups?: () => SMArea[];
   formats?: Format[];
   isCellReadonly?: ReadonlyCellPredicate;
+  navigation?: SelectionNavigationModel;
   disableAutoClipboard?: boolean;
 }): SelectionManager {
   const onStateChangeRef = useRef(props.onStateChange);
   const isCellReadonlyRef = useRef(props.isCellReadonly);
   isCellReadonlyRef.current = props.isCellReadonly;
+  const navigationRef = useRef(props.navigation);
+  navigationRef.current = props.navigation;
 
   const [selectionManager] = useState<SelectionManager>(() => {
     const selectionManager = new SelectionManager(
@@ -34,8 +38,13 @@ export function useInitializeSelectionManager(props: {
       props.getGroups ?? (() => []),
       {
         formats: props.formats,
-        isCellReadonly: (cell) =>
-          isCellReadonlyRef.current?.(cell) ?? false,
+        isCellReadonly: (cell) => isCellReadonlyRef.current?.(cell) ?? false,
+        navigation: {
+          getUsedRange: () => navigationRef.current?.getUsedRange?.(),
+          getTableAt: (cell) => navigationRef.current?.getTableAt?.(cell),
+          resolveTarget: (request) =>
+            navigationRef.current?.resolveTarget?.(request),
+        },
       },
     );
     selectionManager.setState(props.state ?? props.initialState ?? {});

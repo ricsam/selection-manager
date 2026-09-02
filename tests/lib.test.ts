@@ -6,17 +6,17 @@ import { renderToString } from "react-dom/server";
 import {
   // Core class
   SelectionManager,
-  
+
   // Patch system
   createPatches,
   applyPatches,
   buildPatch,
   createPatch,
-  
+
   // React hooks
   useInitializeSelectionManager,
   useSelectionManager,
-  
+
   // Utils
   parseCSVContent,
 } from "../src/lib";
@@ -55,7 +55,7 @@ describe("lib exports", () => {
     const sm = new SelectionManager(
       () => ({ type: "number", value: 10 }), // getNumRows
       () => ({ type: "number", value: 10 }), // getNumCols
-      () => [] // getGroups
+      () => [], // getGroups
     );
     expect(sm.hasFocus).toBe(false);
     expect(sm.selections).toEqual([]);
@@ -103,6 +103,8 @@ describe("lib exports", () => {
       isSelecting: { type: "none" },
       isEditing: { type: "none" },
       isHovering: { type: "none" },
+      selectionMode: "primary",
+      referenceSelection: { type: "none" },
     };
 
     const modifiedState: SelectionManagerState = {
@@ -132,7 +134,10 @@ describe("lib exports", () => {
 
     const selection: SMArea = {
       start: { row: 0, col: 0 },
-      end: { row: { type: "number", value: 5 }, col: { type: "number", value: 3 } },
+      end: {
+        row: { type: "number", value: 5 },
+        col: { type: "number", value: 3 },
+      },
     };
 
     const addPatch = createPatch.addSelection(selection);

@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.29
+
+### Patch Changes
+
+- add data-aware navigation, viewport reveal requests, grid/table bounds, and formula reference selections
+
 ## 0.0.28
 
 ### Patch Changes

@@ -9,9 +9,14 @@ export type ReadonlyCellPredicate = (cell: {
   colIndex: number;
 }) => boolean;
 
+export type SMCell = { row: number; col: number };
+
+export type SMDirection = "up" | "down" | "left" | "right";
+
 export type SelectionManagerOptions = {
   formats?: Format[];
   isCellReadonly?: ReadonlyCellPredicate;
+  navigation?: SelectionNavigationModel;
 };
 
 export type SMArea = {
@@ -25,6 +30,85 @@ export type SMArea = {
     col: MaybeInfNumber;
   };
 };
+
+export type SMTable = {
+  id: string;
+  /** The complete table, including headers and totals when present. */
+  bounds: SMArea;
+  /** The table's data body, when it differs from the complete table. */
+  dataBounds?: SMArea;
+};
+
+export type NavigationKind = "step" | "jump";
+
+export type NavigationRequest = {
+  origin: SMCell;
+  direction: SMDirection;
+  kind: NavigationKind;
+  extend: boolean;
+  gridBounds: SMArea;
+  usedRange?: SMArea;
+  table?: SMTable;
+};
+
+export type NavigationTargetResolver = (
+  request: NavigationRequest,
+) => SMCell | undefined;
+
+export type SelectionNavigationModel = {
+  /** Returns the smallest range containing data on the current grid. */
+  getUsedRange?: () => SMArea | undefined;
+  /** Returns the logical table containing a cell, when one exists. */
+  getTableAt?: (cell: SMCell) => SMTable | undefined;
+  /**
+   * Resolves keyboard navigation. This is authoritative for hosts with sparse
+   * data, virtual rows, tables, or other domain-specific rules.
+   */
+  resolveTarget?: NavigationTargetResolver;
+};
+
+export type ViewportRequest = {
+  type: "reveal-cell";
+  cell: SMCell;
+  direction: SMDirection;
+  align: "nearest" | "start" | "end";
+  reason: "keyboard-navigation";
+  kind: NavigationKind;
+};
+
+export type SelectionMode = "primary" | "reference";
+
+export type ReferencePickingOptions = {
+  /** Associates the picked range with a token or editor decoration. */
+  id?: string;
+  /** The cell or range whose formula is currently being edited. */
+  editedRange?: SMArea;
+  /** An existing reference to show before the next pointer interaction. */
+  initialRange?: SMArea;
+};
+
+export type ReferenceSelectionState =
+  | { type: "none" }
+  | {
+      type: "selecting" | "selected";
+      range: SMArea;
+      id?: string;
+      editedRange?: SMArea;
+    };
+
+export type ReferenceSelectionEvent =
+  | {
+      phase: "start" | "change" | "commit";
+      range: SMArea;
+      id?: string;
+      editedRange?: SMArea;
+    }
+  | {
+      phase: "cancel";
+      range?: SMArea;
+      id?: string;
+      editedRange?: SMArea;
+    };
 
 export type FillDirection = "up" | "down" | "left" | "right";
 
@@ -105,6 +189,9 @@ export type SelectionManagerState = {
   isSelecting: IsSelecting;
   isEditing: IsEditing;
   isHovering: IsHovering;
+  selectionMode: SelectionMode;
+  /** A formula/reference range kept separate from the primary selection. */
+  referenceSelection: ReferenceSelectionState;
 };
 
 /**
@@ -121,7 +208,14 @@ export type StatePatch =
   | {
       op: "replace";
       path: string;
-      value: boolean | SMArea[] | IsSelecting | IsEditing | IsHovering;
+      value:
+        | boolean
+        | SMArea[]
+        | IsSelecting
+        | IsEditing
+        | IsHovering
+        | SelectionMode
+        | ReferenceSelectionState;
     }
   | {
       op: "add";
@@ -135,7 +229,14 @@ export type StatePatch =
   | {
       op: "test";
       path: string;
-      value: boolean | SMArea[] | IsSelecting | IsEditing | IsHovering;
+      value:
+        | boolean
+        | SMArea[]
+        | IsSelecting
+        | IsEditing
+        | IsHovering
+        | SelectionMode
+        | ReferenceSelectionState;
     };
 
 export type CellDataUpdate = {
