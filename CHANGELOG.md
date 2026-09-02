@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.30
+
+### Patch Changes
+
+- yield grid focus when an external editor or control is focused programmatically
+
 ## 0.0.29
 
 ### Patch Changes

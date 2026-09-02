@@ -3393,9 +3393,20 @@ export class SelectionManager {
             scheduleFocusTrap();
           };
           const onDocumentFocusIn = (event: FocusEvent) => {
-            if (event.target !== textarea) {
-              scheduleFocusTrap();
+            if (event.target === textarea) {
+              return;
             }
+
+            // Programmatic focus does not dispatch a pointer event, so the
+            // container-level mousedown handler cannot blur the grid first.
+            // Yield logical focus when another control outside the grid takes
+            // DOM focus instead of stealing it back on the next task.
+            if (event.target && !el.contains(event.target as Node)) {
+              this.blur();
+              return;
+            }
+
+            scheduleFocusTrap();
           };
           const onKeyDown = () => {
             focusTextarea();

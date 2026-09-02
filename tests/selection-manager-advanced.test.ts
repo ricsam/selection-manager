@@ -839,6 +839,41 @@ describe("SelectionManager Advanced Tests", () => {
       }
     });
 
+    it("should yield grid focus to a programmatically focused external control", async () => {
+      const {
+        documentListeners,
+        documentMock,
+        textarea,
+        mockElement,
+        restore,
+      } = createContainerHarness();
+      const externalInput = { id: "formula-input" };
+      mockElement.contains.mockImplementation(
+        (target: unknown) => target !== externalInput,
+      );
+
+      try {
+        const cleanup = selectionManager.setupContainerElement(mockElement);
+        selectionManager.focus();
+
+        expect(textarea.focus).toHaveBeenCalledTimes(1);
+        documentMock.activeElement = externalInput;
+        documentListeners
+          .get("focusin")
+          ?.forEach((listener) => listener({ target: externalInput }));
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        expect(selectionManager.hasFocus).toBe(false);
+        expect(textarea.focus).toHaveBeenCalledTimes(1);
+        expect(mockElement.removeChild).toHaveBeenCalledWith(textarea);
+
+        cleanup();
+      } finally {
+        restore();
+      }
+    });
+
     it("should move and focus the input capture textarea when the selected cell changes", () => {
       const { mockElement, textarea, restore } = createContainerHarness();
       const firstCell = createCellHarness({
