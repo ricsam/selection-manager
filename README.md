@@ -249,6 +249,26 @@ data bounds, table bounds, used range, then the finite grid edge. Every handled
 navigation emits a `reveal-cell` request, including a jump whose target is
 already active. The grid/virtualizer remains responsible for actual scrolling.
 
+Use `replaceSelections` when a host needs to move or restore the primary
+selection programmatically while still notifying React hooks, controlled-state
+listeners, and other subscribers:
+
+```ts
+selectionManager.replaceSelections([
+  {
+    start: { row: 9, col: 2 },
+    end: {
+      row: { type: "number", value: 14 },
+      col: { type: "number", value: 5 },
+    },
+  },
+]);
+```
+
+The manager defensively clones every supplied area and cancels any pointer
+selection currently in progress. This changes selection only; call
+`revealRange` as well when the host should scroll the replacement into view.
+
 Hosts can use the same request channel to reveal a cell range without changing
 the current selection. This is useful for commands such as “go to referenced
 range” from a formula editor:

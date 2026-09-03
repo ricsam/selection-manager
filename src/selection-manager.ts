@@ -40,6 +40,20 @@ const sort = (a: number | "INF", b: number | "INF"): number => {
   return a - b;
 };
 
+const cloneArea = (area: SMArea): SMArea => ({
+  start: { row: area.start.row, col: area.start.col },
+  end: {
+    row:
+      area.end.row.type === "infinity"
+        ? { type: "infinity" }
+        : { type: "number", value: area.end.row.value },
+    col:
+      area.end.col.type === "infinity"
+        ? { type: "infinity" }
+        : { type: "number", value: area.end.col.value },
+  },
+});
+
 export class SelectionManager {
   hasFocus = false;
   selections: SMArea[] = [];
@@ -2556,6 +2570,18 @@ export class SelectionManager {
     this.onUpdate();
   }
 
+  /**
+   * Replace the primary selections through the normal notifying state-update
+   * channel. Supplied areas are cloned, and any pointer selection in progress
+   * is cancelled.
+   */
+  replaceSelections(selections: readonly SMArea[]) {
+    this.willMaybeUpdate();
+    this.selections = selections.map(cloneArea);
+    this.isSelecting = { type: "none" };
+    this.onUpdate();
+  }
+
   forEachSelectedCell(
     callback: (cell: {
       /**
@@ -2683,13 +2709,7 @@ export class SelectionManager {
   ) {
     this.emitViewportRequest({
       type: "reveal-range",
-      range: {
-        start: { ...range.start },
-        end: {
-          row: { ...range.end.row },
-          col: { ...range.end.col },
-        },
-      },
+      range: cloneArea(range),
       align: options.align ?? "nearest",
       reason: "programmatic",
     });

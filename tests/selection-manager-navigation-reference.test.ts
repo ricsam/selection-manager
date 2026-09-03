@@ -254,6 +254,98 @@ describe("grid bounds and semantic navigation", () => {
   });
 });
 
+describe("programmatic selection replacement", () => {
+  test("notifies while focused and cancels an active pointer selection", () => {
+    const manager = new SelectionManager(
+      () => finite(20),
+      () => finite(10),
+      () => [],
+    );
+    manager.focus();
+    manager.cellMouseDown(7, 6, {
+      shiftKey: false,
+      ctrlKey: false,
+      metaKey: false,
+      isFillHandle: false,
+    });
+    expect(manager.hasFocus).toBe(true);
+    expect(manager.isSelecting.type).toBe("drag");
+
+    const updates = mock();
+    manager.onNextState(updates);
+    const selections = [area(2, 3, 4, 5), area(8, 1, 9, 2)];
+
+    manager.replaceSelections(selections);
+
+    expect(manager.selections).toEqual(selections);
+    expect(manager.isSelecting).toEqual({ type: "none" });
+    expect(updates).toHaveBeenCalledTimes(1);
+    expect(updates).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selections,
+        isSelecting: { type: "none" },
+      }),
+    );
+  });
+
+  test("owns a defensive copy of finite and infinite replacement areas", () => {
+    const manager = new SelectionManager(
+      () => ({ type: "infinity" }),
+      () => ({ type: "infinity" }),
+      () => [],
+    );
+    const finiteArea = area(1, 2, 3, 4);
+    const infiniteArea: SMArea = {
+      start: { row: 5, col: 6 },
+      end: { row: { type: "infinity" }, col: finite(9) },
+    };
+    const replacements = [finiteArea, infiniteArea];
+
+    manager.replaceSelections(replacements);
+    replacements.splice(0, replacements.length);
+    finiteArea.start.row = 100;
+    if (finiteArea.end.col.type === "number") finiteArea.end.col.value = 100;
+    infiniteArea.start.col = 100;
+    if (infiniteArea.end.col.type === "number") {
+      infiniteArea.end.col.value = 100;
+    }
+
+    expect(manager.selections).toEqual([
+      area(1, 2, 3, 4),
+      {
+        start: { row: 5, col: 6 },
+        end: { row: { type: "infinity" }, col: finite(9) },
+      },
+    ]);
+  });
+
+  test("publishes the replacement through the controlled-state channel", () => {
+    const manager = new SelectionManager(
+      () => finite(20),
+      () => finite(10),
+      () => [],
+    );
+    const originalSelection = area(0, 0, 0, 0);
+    manager.setState({
+      selections: [originalSelection],
+      isSelecting: { ...area(0, 0, 2, 2), type: "drag" },
+    });
+    manager.controlled = true;
+    let requestedState = manager.getState();
+    manager.onNewRequestedState((state) => {
+      requestedState = state;
+    });
+
+    const replacement = area(10, 3, 12, 5);
+    manager.replaceSelections([replacement]);
+
+    expect(manager.selections).toEqual([originalSelection]);
+    expect(manager.isSelecting.type).toBe("drag");
+    expect(requestedState.selections).toEqual([replacement]);
+    expect(requestedState.isSelecting).toEqual({ type: "none" });
+  });
+});
+
 describe("formula reference selection", () => {
   test("keeps reference dragging separate from selection and editing state", () => {
     const manager = new SelectionManager(

@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.32
+
+### Patch Changes
+
+- add a notifying, defensive API for replacing primary selections
+
 ## 0.0.31
 
 ### Patch Changes
