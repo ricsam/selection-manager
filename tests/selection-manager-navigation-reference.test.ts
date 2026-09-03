@@ -197,6 +197,61 @@ describe("grid bounds and semantic navigation", () => {
     });
     expect(event.preventDefault).toHaveBeenCalled();
   });
+
+  test("emits a cloned programmatic range reveal request", () => {
+    const manager = new SelectionManager(
+      () => ({ type: "infinity" }),
+      () => ({ type: "infinity" }),
+      () => [],
+    );
+    const range: SMArea = {
+      start: { row: 3, col: 4 },
+      end: {
+        row: { type: "infinity" },
+        col: finite(9),
+      },
+    };
+    const requests: ViewportRequest[] = [];
+    manager.listenToViewportRequest((request) => requests.push(request));
+
+    manager.revealRange(range, { align: "start" });
+    range.start.row = 30;
+    if (range.end.col.type === "number") range.end.col.value = 90;
+
+    expect(requests).toEqual([
+      {
+        type: "reveal-range",
+        range: {
+          start: { row: 3, col: 4 },
+          end: {
+            row: { type: "infinity" },
+            col: finite(9),
+          },
+        },
+        align: "start",
+        reason: "programmatic",
+      },
+    ]);
+    expect(manager.selections).toEqual([]);
+  });
+
+  test("uses nearest alignment for programmatic range reveals by default", () => {
+    const manager = new SelectionManager(
+      () => finite(20),
+      () => finite(10),
+      () => [],
+    );
+    const requests: ViewportRequest[] = [];
+    manager.listenToViewportRequest((request) => requests.push(request));
+
+    manager.revealRange(area(1, 2, 5, 6));
+
+    expect(requests[0]).toMatchObject({
+      type: "reveal-range",
+      align: "nearest",
+      reason: "programmatic",
+    });
+  });
 });
 
 describe("formula reference selection", () => {

@@ -22,6 +22,7 @@ import type {
   SMDirection,
   SMTable,
   StatePatch,
+  ViewportAlignment,
   ViewportRequest,
 } from "./types";
 import { parseCSVContent, type Format } from "./utils";
@@ -2669,6 +2670,29 @@ export class SelectionManager {
 
   private emitViewportRequest(request: ViewportRequest) {
     this.viewportRequestListeners.forEach((listener) => listener(request));
+  }
+
+  /**
+   * Ask the host grid or virtualizer to reveal a range without changing the
+   * current selection. The request owns a copy of the supplied range so callers
+   * can safely reuse or mutate their object after this method returns.
+   */
+  public revealRange(
+    range: SMArea,
+    options: { align?: ViewportAlignment } = {},
+  ) {
+    this.emitViewportRequest({
+      type: "reveal-range",
+      range: {
+        start: { ...range.start },
+        end: {
+          row: { ...range.end.row },
+          col: { ...range.end.col },
+        },
+      },
+      align: options.align ?? "nearest",
+      reason: "programmatic",
+    });
   }
 
   private getWritableCellUpdates(updates: CellDataUpdate[]) {

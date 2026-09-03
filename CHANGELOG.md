@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.31
+
+### Patch Changes
+
+- add programmatic range reveal requests for grid and virtualizer integrations
+
 ## 0.0.30
 
 ### Patch Changes

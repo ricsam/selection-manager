@@ -236,7 +236,11 @@ const selectionManager = useInitializeSelectionManager({
 });
 
 const unsubscribe = selectionManager.listenToViewportRequest((request) => {
-  viewport.scrollToCell(request.cell, { align: request.align });
+  if (request.type === "reveal-cell") {
+    viewport.scrollToCell(request.cell, { align: request.align });
+  } else {
+    viewport.scrollToRange(request.range, { align: request.align });
+  }
 });
 ```
 
@@ -244,6 +248,27 @@ Returning `undefined` from `resolveTarget` uses the built-in fallback: table
 data bounds, table bounds, used range, then the finite grid edge. Every handled
 navigation emits a `reveal-cell` request, including a jump whose target is
 already active. The grid/virtualizer remains responsible for actual scrolling.
+
+Hosts can use the same request channel to reveal a cell range without changing
+the current selection. This is useful for commands such as “go to referenced
+range” from a formula editor:
+
+```ts
+selectionManager.revealRange(
+  {
+    start: { row: 9, col: 2 },
+    end: {
+      row: { type: "number", value: 14 },
+      col: { type: "number", value: 5 },
+    },
+  },
+  { align: "nearest" },
+);
+```
+
+`revealRange` emits a `reveal-range` request with reason `programmatic`. Its
+default alignment is `nearest`, and the emitted request contains a clone of the
+range supplied by the caller.
 
 ### Formula reference selection
 

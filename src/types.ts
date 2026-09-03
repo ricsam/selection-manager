@@ -67,14 +67,23 @@ export type SelectionNavigationModel = {
   resolveTarget?: NavigationTargetResolver;
 };
 
-export type ViewportRequest = {
-  type: "reveal-cell";
-  cell: SMCell;
-  direction: SMDirection;
-  align: "nearest" | "start" | "end";
-  reason: "keyboard-navigation";
-  kind: NavigationKind;
-};
+export type ViewportAlignment = "nearest" | "start" | "end";
+
+export type ViewportRequest =
+  | {
+      type: "reveal-cell";
+      cell: SMCell;
+      direction: SMDirection;
+      align: ViewportAlignment;
+      reason: "keyboard-navigation";
+      kind: NavigationKind;
+    }
+  | {
+      type: "reveal-range";
+      range: SMArea;
+      align: ViewportAlignment;
+      reason: "programmatic";
+    };
 
 export type SelectionMode = "primary" | "reference";
 
