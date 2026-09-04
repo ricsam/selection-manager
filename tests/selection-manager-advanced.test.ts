@@ -1453,6 +1453,40 @@ describe("SelectionManager Advanced Tests", () => {
       expect(onPasteCallback).toHaveBeenCalled();
     });
 
+    it("should paste Excel TSV cells containing line breaks as one cell", () => {
+      const onPasteCallback = mock();
+      selectionManager.listenToPaste(onPasteCallback);
+
+      selectionManager.focus();
+      selectionManager.cellMouseDown(0, 0, {
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        isFillHandle: false,
+      });
+      selectionManager.mouseUp();
+
+      const content = '1\t2\t3\none\ttwo\t"abc\ndef"';
+      selectionManager.handlePaste({
+        preventDefault: mock(),
+        clipboardData: {
+          getData: mock(() => content),
+        },
+      } as any);
+
+      expect(onPasteCallback).toHaveBeenCalledWith({
+        rawString: content,
+        updates: [
+          { rowIndex: 0, colIndex: 0, value: "1" },
+          { rowIndex: 0, colIndex: 1, value: "2" },
+          { rowIndex: 0, colIndex: 2, value: "3" },
+          { rowIndex: 1, colIndex: 0, value: "one" },
+          { rowIndex: 1, colIndex: 1, value: "two" },
+          { rowIndex: 1, colIndex: 2, value: "abc\ndef" },
+        ],
+      });
+    });
+
     it("should handle drag and drop files", () => {
       const updateCallback = mock();
       selectionManager.listenToUpdateData(updateCallback);

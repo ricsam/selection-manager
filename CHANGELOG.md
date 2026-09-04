@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.33
+
+### Patch Changes
+
+- parse Excel-style quoted CSV and TSV cells containing embedded line breaks
+
 ## 0.0.32
 
 ### Patch Changes

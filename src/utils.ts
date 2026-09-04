@@ -6,11 +6,111 @@ export type CellData = {
 
 export type Format = 'csv' | 'tsv';
 
+/**
+ * Detect tabs that are actual separators rather than cell content. During
+ * auto-detection, quotes may begin after either candidate delimiter.
+ */
+const containsUnquotedTab = (content: string): boolean => {
+  let inQuotedField = false;
+  let atPotentialFieldStart = true;
+
+  for (let index = 0; index < content.length; index++) {
+    const char = content[index];
+
+    if (inQuotedField) {
+      if (char === '"') {
+        if (content[index + 1] === '"') {
+          index++;
+        } else {
+          inQuotedField = false;
+        }
+      }
+      continue;
+    }
+
+    if (char === '"' && atPotentialFieldStart) {
+      inQuotedField = true;
+      atPotentialFieldStart = false;
+      continue;
+    }
+
+    if (char === '\t') return true;
+
+    if (char === '\n' || char === '\r') {
+      atPotentialFieldStart = true;
+      if (char === '\r' && content[index + 1] === '\n') index++;
+      continue;
+    }
+
+    atPotentialFieldStart = char === ',';
+  }
+
+  return false;
+};
+
+const getDelimitedContentDelimiter = (
+  content: string,
+  formats: Format[] = [],
+): string => {
+  if (formats.length > 0) return formats.includes('tsv') ? '\t' : ',';
+  return containsUnquotedTab(content) ? '\t' : ',';
+};
+
+/**
+ * Split delimited content into logical records without treating line breaks in
+ * quoted fields as row separators. Quotes only open a quoted field at the
+ * beginning of a cell, matching CSV/TSV and Excel clipboard semantics.
+ */
+const splitDelimitedRecords = (content: string, delimiter: string): string[] => {
+  const records: string[] = [];
+  let record = '';
+  let inQuotedField = false;
+  let atFieldStart = true;
+
+  for (let index = 0; index < content.length; index++) {
+    const char = content[index];
+
+    if (inQuotedField) {
+      record += char;
+      if (char === '"') {
+        if (content[index + 1] === '"') {
+          record += content[index + 1];
+          index++;
+        } else {
+          inQuotedField = false;
+        }
+      }
+      continue;
+    }
+
+    if (char === '"' && atFieldStart) {
+      inQuotedField = true;
+      atFieldStart = false;
+      record += char;
+      continue;
+    }
+
+    if (char === '\n' || char === '\r') {
+      records.push(record);
+      record = '';
+      atFieldStart = true;
+      if (char === '\r' && content[index + 1] === '\n') index++;
+      continue;
+    }
+
+    record += char;
+    atFieldStart = char === delimiter;
+  }
+
+  records.push(record);
+  return records;
+};
+
 // CSV/TSV parsing utilities
 export const parseCSVLine = (line: string, delimiter?: string): string[] => {
   // Auto-detect delimiter: if line contains tabs, use tab; otherwise use comma
   // Or use provided delimiter if specified
-  const actualDelimiter = delimiter ?? (line.includes('\t') ? '\t' : ',');
+  const actualDelimiter = delimiter ?? getDelimitedContentDelimiter(line);
   
   // First, identify all quote-protected ranges
   const protectedRanges: Array<{start: number, end: number}> = [];
@@ -140,7 +240,11 @@ const parseFormattedNumbers = (line: string): string[] => {
 };
 
 // Enhanced parsing that handles CSV, TSV, and space-separated values
-const parseDelimitedLine = (line: string, formats?: Format[]): string[] => {
+const parseDelimitedLine = (
+  line: string,
+  formats: Format[] | undefined,
+  detectedDelimiter: string,
+): string[] => {
   // If formats are specified, use them to guide parsing
   if (formats && formats.length > 0) {
     // Prefer TSV over CSV if both are present
@@ -153,12 +257,15 @@ const parseDelimitedLine = (line: string, formats?: Format[]): string[] => {
   }
   
   // Auto-detect delimiter: prefer tabs > commas > spaces
-  if (line.includes("\t")) {
-    // Tab-separated - use tab delimiter
-    return parseCSVLine(line);
+  if (detectedDelimiter === '\t') {
+    // Tab-separated - use the content-wide delimiter decision
+    return parseCSVLine(line, '\t');
   } else if (line.includes(",")) {
     // Could be CSV or formatted numbers - try smart parsing
     return parseFormattedNumbers(line);
+  } else if (line.startsWith('"')) {
+    // A single quoted cell may still contain an embedded line break.
+    return parseCSVLine(line, ',');
   } else {
     // Check if this looks like space-separated formatted numbers
     const spaceSeparatedPattern =
@@ -214,7 +321,8 @@ const isSingleFormattedNumber = (content: string): boolean => {
 };
 
 export const parseCSVContent = (content: string, formats: Format[] = []): CellData[] => {
-  const lines = content.split(/\r?\n/);
+  const detectedDelimiter = getDelimitedContentDelimiter(content, formats);
+  const lines = splitDelimitedRecords(content, detectedDelimiter);
   const nonEmptyLines = lines.filter((line) => line.trim());
 
   const cellData: CellData[] = [];
@@ -255,7 +363,7 @@ export const parseCSVContent = (content: string, formats: Format[] = []): CellDa
   } else {
     // Use normal CSV/TSV/space-separated parsing, preserving original row structure
     lines.forEach((line, rowIndex) => {
-      const parsedLine = parseDelimitedLine(line, formats);
+      const parsedLine = parseDelimitedLine(line, formats, detectedDelimiter);
       // Only process rows that have at least one non-empty cell
       if (parsedLine.some((cell) => cell.trim() !== "")) {
         parsedLine.forEach((cellValue, colIndex) => {

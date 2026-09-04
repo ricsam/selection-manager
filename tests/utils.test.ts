@@ -80,6 +80,10 @@ describe("CSV/TSV parsing", () => {
       const tsvResult = parseCSVLine('a\tb\tc');
       expect(tsvResult).toEqual(["a", "b", "c"]);
     });
+
+    test("should not treat a tab inside a quoted CSV cell as the delimiter", () => {
+      expect(parseCSVLine('"a\tb",next')).toEqual(["a\tb", "next"]);
+    });
   });
 
   describe("parseCSVContent", () => {
@@ -247,8 +251,6 @@ describe("parseCSVContent", () => {
   });
 
   test("should handle quoted values", () => {
-    // Note: Multi-line quoted values are not currently supported
-    // because the parser splits on line breaks first
     const content = '"hello, world",test\n"simple",another';
     const result = parseCSVContent(content);
     expect(result).toEqual([
@@ -256,6 +258,65 @@ describe("parseCSVContent", () => {
       { rowIndex: 0, colIndex: 1, value: "test" },
       { rowIndex: 1, colIndex: 0, value: "simple" },
       { rowIndex: 1, colIndex: 1, value: "another" },
+    ]);
+  });
+
+  test("should parse Excel TSV cells containing line breaks", () => {
+    const content = '1\t2\t3\none\ttwo\t"abc\ndef"';
+    const expected = [
+      { rowIndex: 0, colIndex: 0, value: "1" },
+      { rowIndex: 0, colIndex: 1, value: "2" },
+      { rowIndex: 0, colIndex: 2, value: "3" },
+      { rowIndex: 1, colIndex: 0, value: "one" },
+      { rowIndex: 1, colIndex: 1, value: "two" },
+      { rowIndex: 1, colIndex: 2, value: "abc\ndef" },
+    ];
+
+    expect(parseCSVContent(content)).toEqual(expected);
+    expect(parseCSVContent(content, ["tsv"])).toEqual(expected);
+  });
+
+  test("should parse quoted TSV cells containing tabs, line breaks, and escaped quotes", () => {
+    const content = 'left\t"one\ttwo\nsaid ""hello"""\tright';
+    const result = parseCSVContent(content, ["csv", "tsv"]);
+
+    expect(result).toEqual([
+      { rowIndex: 0, colIndex: 0, value: "left" },
+      {
+        rowIndex: 0,
+        colIndex: 1,
+        value: 'one\ttwo\nsaid "hello"',
+      },
+      { rowIndex: 0, colIndex: 2, value: "right" },
+    ]);
+  });
+
+  test("should preserve Windows line endings inside quoted TSV cells", () => {
+    const content = 'left\t"first\r\nsecond"\r\nnext\trow';
+    const result = parseCSVContent(content, ["tsv"]);
+
+    expect(result).toEqual([
+      { rowIndex: 0, colIndex: 0, value: "left" },
+      { rowIndex: 0, colIndex: 1, value: "first\r\nsecond" },
+      { rowIndex: 1, colIndex: 0, value: "next" },
+      { rowIndex: 1, colIndex: 1, value: "row" },
+    ]);
+  });
+
+  test("should parse a single quoted cell containing a line break", () => {
+    const result = parseCSVContent('"abc\ndef"');
+
+    expect(result).toEqual([
+      { rowIndex: 0, colIndex: 0, value: "abc\ndef" },
+    ]);
+  });
+
+  test("should keep tabs and line breaks inside an auto-detected CSV cell", () => {
+    const result = parseCSVContent('"a\tb\nc",next');
+
+    expect(result).toEqual([
+      { rowIndex: 0, colIndex: 0, value: "a\tb\nc" },
+      { rowIndex: 0, colIndex: 1, value: "next" },
     ]);
   });
 
