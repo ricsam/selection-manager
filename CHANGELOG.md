@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.35
+
+### Patch Changes
+
+- avoid redundant state publications for idle mouseup and already-cleared selection/hover state, and skip state cloning for unchanged focus/blur
+
 ## 0.0.34
 
 ### Patch Changes

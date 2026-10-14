@@ -847,6 +847,7 @@ export class SelectionManager {
       this.cancelReferenceSelection();
       return;
     }
+    if (this.isSelecting.type === "none") return;
     this.willMaybeUpdate();
     this.isSelecting = { type: "none" };
     this.onUpdate();
@@ -2564,6 +2565,7 @@ export class SelectionManager {
   }
 
   clearSelections() {
+    if (this.selections.length === 0 && this.isSelecting.type === "none") return;
     this.willMaybeUpdate();
     this.selections = [];
     this.isSelecting = { type: "none" };
@@ -2754,24 +2756,21 @@ export class SelectionManager {
   }
 
   focus() {
+    if (this.hasFocus) return;
     this.willMaybeUpdate();
-    const prev = this.hasFocus;
     this.hasFocus = true;
-    if (prev !== this.hasFocus) {
-      this.onUpdate();
-    }
+    this.onUpdate();
   }
 
   blur() {
+    if (!this.hasFocus) return;
     this.willMaybeUpdate();
-    const prev = this.hasFocus;
     this.hasFocus = false;
-    if (prev !== this.hasFocus) {
-      this.onUpdate();
-    }
+    this.onUpdate();
   }
 
   cancelHovering() {
+    if (this.isHovering.type === "none") return;
     this.willMaybeUpdate();
     this.isHovering = { type: "none" };
     this.onUpdate();
@@ -3234,6 +3233,15 @@ export class SelectionManager {
     null;
 
   mouseUp() {
+    // Window-level mouseup also runs for clicks outside this grid. Only an
+    // active gesture has state to commit (including reference picking).
+    if (
+      this.selectionMode === "reference"
+        ? this.referenceSelection.type !== "selecting"
+        : this.isSelecting.type === "none"
+    ) {
+      return;
+    }
     this.willMaybeUpdate();
     if (this.selectionMode === "reference") {
       if (this.referenceSelection.type === "selecting") {
@@ -3348,9 +3356,7 @@ export class SelectionManager {
     };
 
     const handleMouseLeave = (ev: MouseEvent) => {
-      this.willMaybeUpdate();
-      this.isHovering = { type: "none" };
-      this.onUpdate();
+      this.cancelHovering();
     };
 
     const selectionCleanup = this.observeStateChange(
