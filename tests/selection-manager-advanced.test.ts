@@ -625,6 +625,7 @@ describe("SelectionManager Advanced Tests", () => {
         isConnected: false,
         ownerDocument: documentMock,
         setAttribute: mock(),
+        removeAttribute: mock(),
         addEventListener: mock((type: string, listener: Listener) => {
           registerListener(textareaListeners, type, listener);
         }),
@@ -802,6 +803,44 @@ describe("SelectionManager Advanced Tests", () => {
       // Restore global objects
       globalThis.window = originalWindow;
       globalThis.document = originalDocument;
+    });
+
+    it("should keep accessible capture metadata current without changing focus", () => {
+      const { mockElement, textarea, restore } = createContainerHarness();
+      try {
+        const cleanup = selectionManager.setupContainerElement(mockElement);
+        const metadata = {
+          label: "Budget keyboard input",
+          controls: "budget-grid",
+          activeDescendant: "budget-A1",
+          describedBy: "keyboard-help",
+        };
+        selectionManager.setInputCaptureAccessibility(metadata);
+        metadata.label = "Do not retain caller's mutable object";
+        selectionManager.focus();
+        expect(textarea.setAttribute).toHaveBeenCalledWith("aria-label", "Budget keyboard input");
+        expect(textarea.setAttribute).toHaveBeenCalledWith("aria-controls", "budget-grid");
+        expect(textarea.setAttribute).toHaveBeenCalledWith("aria-activedescendant", "budget-A1");
+        expect(textarea.setAttribute).toHaveBeenCalledWith("aria-describedby", "keyboard-help");
+        const focusCalls = textarea.focus.mock.calls.length;
+        selectionManager.setInputCaptureAccessibility({
+          controls: "budget-grid", activeDescendant: "budget-B2",
+        });
+        expect(textarea.setAttribute).toHaveBeenCalledWith("aria-activedescendant", "budget-B2");
+        expect(textarea.setAttribute).toHaveBeenCalledWith("aria-label", "Spreadsheet keyboard input");
+        expect(textarea.removeAttribute).toHaveBeenCalledWith("aria-describedby");
+        expect(textarea.focus).toHaveBeenCalledTimes(focusCalls);
+        selectionManager.blur();
+        textarea.setAttribute.mockClear();
+        selectionManager.focus();
+        expect(textarea.setAttribute).toHaveBeenCalledWith("aria-activedescendant", "budget-B2");
+        selectionManager.setInputCaptureAccessibility({});
+        expect(textarea.removeAttribute).toHaveBeenCalledWith("aria-controls");
+        expect(textarea.removeAttribute).toHaveBeenCalledWith("aria-activedescendant");
+        cleanup();
+      } finally {
+        restore();
+      }
     });
 
     it("should trap focus back to the input capture textarea", async () => {

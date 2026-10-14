@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.34
+
+### Patch Changes
+
+- add accessible naming and dynamic grid/active-cell references for the focused keyboard capture via `setInputCaptureAccessibility`
+
 ## 0.0.33
 
 ### Patch Changes

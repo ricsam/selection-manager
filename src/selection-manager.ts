@@ -3186,6 +3186,50 @@ export class SelectionManager {
   }
 
   inputCaptureElement: HTMLTextAreaElement | null = null;
+  private inputCaptureAccessibility: {
+    label?: string;
+    controls?: string;
+    activeDescendant?: string;
+    describedBy?: string;
+  } = {};
+
+  /**
+   * Replace the keyboard capture's accessible metadata, including while focused.
+   * The host owns IDs: controls should identify the grid, and activeDescendant
+   * a currently mounted cell within it. Omit unavailable IDs (e.g. virtual cells).
+   * Metadata survives editing/blur and is applied when the capture is recreated.
+   * Call with {} to reset. This does not change selection or take DOM focus.
+   */
+  setInputCaptureAccessibility(metadata: {
+    label?: string;
+    controls?: string;
+    activeDescendant?: string;
+    describedBy?: string;
+  }) {
+    this.inputCaptureAccessibility = { ...metadata };
+    if (this.inputCaptureElement) {
+      this.applyInputCaptureAccessibility(this.inputCaptureElement);
+    }
+  }
+
+  private applyInputCaptureAccessibility(textarea: HTMLTextAreaElement) {
+    const metadata = this.inputCaptureAccessibility;
+    textarea.setAttribute(
+      "aria-label",
+      metadata.label || "Spreadsheet keyboard input",
+    );
+    for (const [attribute, value] of [
+      ["aria-controls", metadata.controls],
+      ["aria-activedescendant", metadata.activeDescendant],
+      ["aria-describedby", metadata.describedBy],
+    ] as const) {
+      if (value) {
+        textarea.setAttribute(attribute, value);
+      } else {
+        textarea.removeAttribute(attribute);
+      }
+    }
+  }
   private editingInputElement: HTMLInputElement | HTMLTextAreaElement | null =
     null;
 
@@ -3346,6 +3390,7 @@ export class SelectionManager {
           textarea.style.zIndex = "-1";
           textarea.name = "selection-manager-input-capture";
           textarea.tabIndex = -1;
+          this.applyInputCaptureAccessibility(textarea);
           el.appendChild(textarea);
 
           let focusTrapTimeout: ReturnType<typeof setTimeout> | undefined;

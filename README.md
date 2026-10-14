@@ -4,6 +4,38 @@
 
 Transform any grid into an Excel-like powerhouse with intuitive multi-selection, keyboard navigation, copy/paste operations, and blazing-fast performance. Whether you're building the next Google Sheets or just need some fancy data tables, SelectionManager has got you covered! 🚀
 
+## Accessible keyboard capture
+
+The host renders grid/row/gridcell roles, accessible names, selection state and
+stable cell IDs. When a grid has logical focus, SelectionManager focuses an
+invisible native textarea for typing and clipboard input. Do not hide this
+focused control with `aria-hidden`.
+
+Use the additive `setInputCaptureAccessibility` API to connect that focused
+textbox to the rendered grid and active cell:
+
+```ts
+selectionManager.setInputCaptureAccessibility({
+  label: "Budget spreadsheet keyboard input",
+  controls: "budget-grid", // ID of the host's role="grid" element
+  activeDescendant: "budget-cell-A1", // ID of a mounted cell in that grid
+  describedBy: "budget-keyboard-help", // optional instructions element ID
+});
+```
+
+Each call replaces the metadata snapshot without changing selection or focus.
+Update it when the active cell or rendered viewport changes; omit
+`activeDescendant` when its cell is not mounted. Metadata is retained across
+blur/editing and reapplied when the capture is recreated. Call with `{}` to reset
+references and restore the default label, `Spreadsheet keyboard input`.
+
+The host still owns its Tab entry point and actual cell editor's accessible
+name. Calling `focus()` activates the manager; merely focusing a host container
+does not. Arrow keys navigate, Shift extends selection, Enter/Tab navigate,
+F2 edits, and Escape cancels editing/selection interactions. Test the complete
+host implementation with browser tools and assistive technology; this bridge
+alone does not establish a fully accessible grid.
+
 ## ✨ Features That'll Make You Smile
 
 - 🎯 **Multi-selection magic** - Select ranges like a pro with Ctrl/Cmd + click
