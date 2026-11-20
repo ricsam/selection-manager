@@ -77,6 +77,23 @@ export class SelectionManager {
     ReferencePickingOptions,
     "id" | "editedRange"
   > = {};
+  /** Rows the host hides (e.g. filtered table rows); see setHiddenRows. */
+  private hiddenRows: ReadonlySet<number> = new Set<number>();
+  /**
+   * Each hidden row's run of consecutive hidden rows, so the nearest visible
+   * row is found in constant time however many rows a filter hides.
+   */
+  private hiddenRowRuns: ReadonlyMap<number, HiddenRowRun> = new Map();
+  /** A hidden-rows change was stored but not yet published to listeners. */
+  private hiddenRowsPublishPending = false;
+  /**
+   * Listeners that only mirror the selection state (the onStateChange callback
+   * of useInitializeSelectionManager). Hidden-row publications leave the state
+   * untouched, so they skip these.
+   */
+  private readonly stateMirrorListeners = new WeakSet<
+    (state: SelectionManagerState) => void
+  >();
 
   constructor(
     public getNumRows: () => MaybeInfNumber,
@@ -97,6 +114,11 @@ export class SelectionManager {
       normalizedOptions.navigation?.getTableAt ?? (() => undefined);
     this.resolveNavigationTargetProvider =
       normalizedOptions.navigation?.resolveTarget;
+    if (normalizedOptions.hiddenRows) {
+      this.stageHiddenRows(normalizedOptions.hiddenRows);
+      // Nothing is subscribed yet, so there is nothing to publish.
+      this.hiddenRowsPublishPending = false;
+    }
   }
 
   getState(): SelectionManagerState {
@@ -275,11 +297,12 @@ export class SelectionManager {
       this.max(selection.start.col, selection.end.col),
       this.getNumCols(),
     );
+    // Hidden first/last rows move the top/bottom border to the nearest
+    // visible row of the range.
+    const visibleRows = this.visibleRowEdges(startRow, endRow);
     const borders: Border[] = [];
-    if (cell.row === startRow) borders.push("top");
-    if (endRow.type === "number" && cell.row === endRow.value) {
-      borders.push("bottom");
-    }
+    if (cell.row === visibleRows.first) borders.push("top");
+    if (cell.row === visibleRows.last) borders.push("bottom");
     if (cell.col === startCol) borders.push("left");
     if (endCol.type === "number" && cell.col === endCol.value) {
       borders.push("right");
@@ -490,7 +513,13 @@ export class SelectionManager {
       };
     }
 
-    const rowDiff = Math.abs(currentCell.row - baseSelection.end.row.value);
+    // The fill handle sits on the base selection's last visible row, so
+    // measure the pointer from there. A pointer at (or below) the handle row
+    // keeps every row of the base, including hidden rows after the handle.
+    const handleRow =
+      this.getFillHandleRow(baseSelection, baseSelection.end.row.value) ??
+      baseSelection.end.row.value;
+    const rowDiff = Math.abs(currentCell.row - handleRow);
     const colDiff = Math.abs(currentCell.col - baseSelection.end.col.value);
 
     if (rowDiff >= colDiff) {
@@ -504,7 +533,13 @@ export class SelectionManager {
             col: baseSelection.start.col,
           },
           end: {
-            row: { type: "number", value: currentCell.row },
+            row: {
+              type: "number",
+              value:
+                currentCell.row >= handleRow
+                  ? baseSelection.end.row.value
+                  : currentCell.row,
+            },
             col: baseSelection.end.col,
           },
         };
@@ -684,8 +719,23 @@ export class SelectionManager {
       return false;
     }
     return (
-      bottomRight.row.value === cell.row && bottomRight.col.value === cell.col
+      this.getFillHandleRow(baseSelection, bottomRight.row.value) ===
+        cell.row && bottomRight.col.value === cell.col
     );
+  }
+
+  /**
+   * The row of the fill handle: the base selection's last visible row, or
+   * undefined when all of its rows are hidden.
+   */
+  private getFillHandleRow(
+    baseSelection: SMArea,
+    endRow: number,
+  ): number | undefined {
+    return this.visibleRowEdges(
+      this.min(baseSelection.start.row, baseSelection.end.row),
+      { type: "number", value: endRow },
+    ).last;
   }
 
   bottomRightOfSelection(selection: SMArea) {
@@ -900,6 +950,239 @@ export class SelectionManager {
     return target ? this.getTableAtProvider(target) : undefined;
   }
 
+  /**
+   * Replace the rows the host hides, such as the rows a table filter hides.
+   *
+   * Coordinates never remap: selections keep their 0-based sheet indexes and
+   * may still span hidden rows. Keyboard navigation skips hidden rows, the
+   * selection, drag, reference and row-header borders and the fill handle use
+   * the nearest visible rows, and `clearSelectedCells` and `selectionToTsv`
+   * leave hidden rows out. Paste, fill events, mouse selection and the other
+   * selection queries are unchanged.
+   *
+   * Does nothing when the set is unchanged. Otherwise the current state is
+   * published to the `onNextState` listeners (cells, headers, state observers
+   * and `useSelectionManager` hooks) so their decorations recompute. The
+   * selection state itself does not change, so no new controlled state is
+   * requested. Values that are not non-negative integers are ignored.
+   */
+  setHiddenRows(rows: Iterable<number>): void {
+    this.stageHiddenRows(rows);
+    this.flushHiddenRows();
+  }
+
+  /** The rows the host hides (see `setHiddenRows`). Do not mutate it. */
+  getHiddenRows(): ReadonlySet<number> {
+    return this.hiddenRows;
+  }
+
+  isRowHidden(row: number): boolean {
+    return this.hiddenRows.has(row);
+  }
+
+  /**
+   * The nearest visible row from `row` (inclusive) moving up or down within
+   * the grid's rows (unbounded downward in an infinite grid), or undefined
+   * when there is none.
+   */
+  findVisibleRow(row: number, direction: "up" | "down"): number | undefined {
+    const numRows = this.getNumRows();
+    return this.findVisibleRowBetween(
+      row,
+      direction,
+      0,
+      numRows.type === "infinity" ? Infinity : numRows.value - 1,
+    );
+  }
+
+  /**
+   * The nearest visible row from `row` (inclusive) moving in `direction`,
+   * searching only `minRow..maxRow`; a start outside that range is moved into
+   * it. Constant time: a hidden start jumps past its run of hidden rows.
+   */
+  private findVisibleRowBetween(
+    row: number,
+    direction: "up" | "down",
+    minRow: number,
+    maxRow: number,
+  ): number | undefined {
+    if (direction === "down") {
+      const start = Math.max(row, minRow);
+      const run = this.hiddenRowRuns.get(start);
+      const candidate = run ? run.last + 1 : start;
+      return candidate <= maxRow ? candidate : undefined;
+    }
+    const start = Math.min(row, maxRow);
+    const run = this.hiddenRowRuns.get(start);
+    const candidate = run ? run.first - 1 : start;
+    return candidate >= minRow ? candidate : undefined;
+  }
+
+  /** The nearest visible row above `row`; negative when there is none. */
+  private visibleRowAbove(row: number): number {
+    return (this.hiddenRowRuns.get(row - 1)?.first ?? row) - 1;
+  }
+
+  /** The nearest visible row below `row`; past the grid when there is none. */
+  private visibleRowBelow(row: number): number {
+    return (this.hiddenRowRuns.get(row + 1)?.last ?? row) + 1;
+  }
+
+  /** Whether `row` has a visible row above it (row 0 never does). */
+  private hasVisibleRowAbove(row: number): boolean {
+    return this.hiddenRows.size === 0
+      ? row !== 0
+      : this.visibleRowAbove(row) >= 0;
+  }
+
+  /**
+   * The first and last visible rows of `startRow..endRow`, where an area
+   * shows its top and bottom borders. An infinite end has no last row; both
+   * are undefined when every row of the area is hidden.
+   */
+  private visibleRowEdges(
+    startRow: number,
+    endRow: MaybeInfNumber,
+  ): { first: number | undefined; last: number | undefined } {
+    if (this.hiddenRows.size === 0) {
+      return {
+        first: startRow,
+        last: endRow.type === "infinity" ? undefined : endRow.value,
+      };
+    }
+    const maxRow = endRow.type === "infinity" ? Infinity : endRow.value;
+    return {
+      first: this.findVisibleRowBetween(startRow, "down", startRow, maxRow),
+      last:
+        endRow.type === "infinity"
+          ? undefined
+          : this.findVisibleRowBetween(maxRow, "up", startRow, maxRow),
+    };
+  }
+
+  /** Store hidden rows without notifying; `flushHiddenRows` publishes them. */
+  private stageHiddenRows(rows: Iterable<number>) {
+    const next = new Set<number>();
+    for (const row of rows) {
+      if (Number.isInteger(row) && row >= 0) {
+        next.add(row);
+      }
+    }
+    if (next.size === this.hiddenRows.size) {
+      let unchanged = true;
+      for (const row of next) {
+        if (!this.hiddenRows.has(row)) {
+          unchanged = false;
+          break;
+        }
+      }
+      if (unchanged) return;
+    }
+    const runs = new Map<number, HiddenRowRun>();
+    let run: HiddenRowRun | undefined;
+    for (const row of [...next].sort((a, b) => a - b)) {
+      if (run && row === run.last + 1) {
+        run.last = row;
+      } else {
+        run = { first: row, last: row };
+      }
+      runs.set(row, run);
+    }
+    this.hiddenRows = next;
+    this.hiddenRowRuns = runs;
+    this.hiddenRowsPublishPending = true;
+  }
+
+  /**
+   * Publish a stored hidden-rows change: the current, unchanged state goes to
+   * the onNextState listeners so mounted cells, headers and hooks recompute
+   * their decorations. This deliberately bypasses onUpdate and its
+   * controlled-mode patches because no selection state changed.
+   */
+  private flushHiddenRows() {
+    if (!this.hiddenRowsPublishPending) return;
+    this.hiddenRowsPublishPending = false;
+    const state = this.getState();
+    this.nextStateListeners.forEach((listener) => {
+      if (!this.stateMirrorListeners.has(listener)) {
+        listener(state);
+      }
+    });
+  }
+
+  /**
+   * Moves a vertical step target that landed on a hidden row on to the next
+   * visible row in the step's direction; without one the origin is kept.
+   */
+  private skipHiddenStepTarget(
+    target: SMCell,
+    request: NavigationRequest,
+  ): SMCell {
+    if (
+      (request.direction !== "up" && request.direction !== "down") ||
+      !this.hiddenRows.has(target.row)
+    ) {
+      return target;
+    }
+    const forward =
+      request.direction === "down"
+        ? target.row > request.origin.row
+        : target.row < request.origin.row;
+    if (!forward) {
+      // A step clamped at the grid edge, or a host-resolved step on or behind
+      // the origin row, is not moving forward: keep it at or near the origin.
+      return this.snapHiddenTargetTowardOrigin(target, request);
+    }
+    const bounds = request.gridBounds;
+    const maxRow = this.max(bounds.start.row, bounds.end.row);
+    const row = this.findVisibleRowBetween(
+      target.row,
+      request.direction,
+      this.min(bounds.start.row, bounds.end.row),
+      maxRow.type === "infinity" ? Infinity : maxRow.value,
+    );
+    return row === undefined
+      ? this.clampNavigationCell(request.origin, bounds)
+      : { row, col: target.col };
+  }
+
+  /**
+   * Moves a vertical jump target (built-in or host-resolved) that landed on a
+   * hidden row back toward the origin, to the nearest visible row between
+   * them; without one the origin is kept.
+   */
+  private snapHiddenTargetTowardOrigin(
+    target: SMCell,
+    request: NavigationRequest,
+  ): SMCell {
+    if (
+      (request.direction !== "up" && request.direction !== "down") ||
+      !this.hiddenRows.has(target.row)
+    ) {
+      return target;
+    }
+    const origin = request.origin;
+    const row =
+      target.row > origin.row
+        ? this.findVisibleRowBetween(
+            target.row,
+            "up",
+            origin.row + 1,
+            target.row,
+          )
+        : target.row < origin.row
+          ? this.findVisibleRowBetween(
+              target.row,
+              "down",
+              target.row,
+              origin.row - 1,
+            )
+          : undefined;
+    return row === undefined
+      ? this.clampNavigationCell(origin, request.gridBounds)
+      : { row, col: target.col };
+  }
+
   private clampNavigationCell(cell: SMCell, bounds: SMArea): SMCell {
     const maxRow = this.max(bounds.start.row, bounds.end.row);
     const maxCol = this.max(bounds.start.col, bounds.end.col);
@@ -952,11 +1235,19 @@ export class SelectionManager {
     return undefined;
   }
 
-  /** Resolves a finite target cell for step or semantic jump navigation. */
+  /**
+   * Resolves a finite target cell for step or semantic jump navigation.
+   * With hidden rows, a vertical step (built-in or host-resolved) skips them
+   * and stays put when no visible row follows; a jump target on a hidden row
+   * snaps back toward the origin to the nearest visible row.
+   */
   getNavigationTarget(request: NavigationRequest): SMCell | undefined {
     const resolved = this.resolveNavigationTargetProvider?.(request);
     if (resolved) {
-      return this.clampNavigationCell(resolved, request.gridBounds);
+      const target = this.clampNavigationCell(resolved, request.gridBounds);
+      return request.kind === "step"
+        ? this.skipHiddenStepTarget(target, request)
+        : this.snapHiddenTargetTowardOrigin(target, request);
     }
 
     if (request.kind === "step") {
@@ -974,12 +1265,15 @@ export class SelectionManager {
               ? 1
               : 0,
       };
-      return this.clampNavigationCell(
-        {
-          row: request.origin.row + delta.row,
-          col: request.origin.col + delta.col,
-        },
-        request.gridBounds,
+      return this.skipHiddenStepTarget(
+        this.clampNavigationCell(
+          {
+            row: request.origin.row + delta.row,
+            col: request.origin.col + delta.col,
+          },
+          request.gridBounds,
+        ),
+        request,
       );
     }
 
@@ -997,7 +1291,10 @@ export class SelectionManager {
         area,
       );
       if (target) {
-        return this.clampNavigationCell(target, request.gridBounds);
+        return this.snapHiddenTargetTowardOrigin(
+          this.clampNavigationCell(target, request.gridBounds),
+          request,
+        );
       }
     }
 
@@ -1388,9 +1685,11 @@ export class SelectionManager {
     const numRows = this.getNumRows();
     const numCols = this.getNumCols();
 
+    // The nearest visible rows are the vertical neighbours, so an area whose
+    // first or last rows are hidden still shows its top and bottom borders.
     const surroundingCells = [
-      [{ row: row - 1, col }, "top"],
-      [{ row: row + 1, col }, "bottom"],
+      [{ row: this.visibleRowAbove(row), col }, "top"],
+      [{ row: this.visibleRowBelow(row), col }, "bottom"],
       [{ row, col: col - 1 }, "left"],
       [{ row, col: col + 1 }, "right"],
     ] as const;
@@ -1640,11 +1939,14 @@ export class SelectionManager {
       // Handle infinite selections by normalizing to actual table bounds
       const actualMaxRow = this.normalizeEndBound(maxRow, numRows);
       const actualMaxCol = this.normalizeEndBound(maxCol, numCols);
+      // Hidden first/last rows move the top/bottom border to the nearest
+      // visible row of the area.
+      const visibleRows = this.visibleRowEdges(minRow, actualMaxRow);
 
-      if (cell.row === minRow) {
+      if (cell.row === visibleRows.first) {
         borders.push("top");
       }
-      if (actualMaxRow.type !== "infinity" && cell.row === actualMaxRow.value) {
+      if (cell.row === visibleRows.last) {
         borders.push("bottom");
       }
       if (cell.col === minCol) {
@@ -1671,7 +1973,7 @@ export class SelectionManager {
       switch (border) {
         case "top":
           if (
-            cell.row !== 0 ||
+            this.hasVisibleRowAbove(cell.row) ||
             !this.currentSelectionCoversWholeIndex(cell.col, "col")
           ) {
             selectionShadows.push(`inset 0 2px 0 0 ${color}`);
@@ -1697,7 +1999,10 @@ export class SelectionManager {
     selectionBorders.forEach((border) => {
       switch (border) {
         case "top":
-          if (cell.row !== 0 || !this.isWholeColSelected(cell.col)) {
+          if (
+            this.hasVisibleRowAbove(cell.row) ||
+            !this.isWholeColSelected(cell.col)
+          ) {
             selectionShadows.push(`inset 0 2px 0 0 #2196F3`);
           }
           break;
@@ -1927,11 +2232,12 @@ export class SelectionManager {
     if (isSelected) {
       // merge the selection with the cell box shadow
       if (type === "row") {
+        // The nearest visible rows are the neighbours of a row header.
         selectionShadows.push(`inset 2px 0 0 0 #2196F3`); // border left
-        if (!this.isWholeRowSelected(index - 1)) {
+        if (!this.isWholeRowSelected(this.visibleRowAbove(index))) {
           selectionShadows.push(`inset 0 2px 0 0 #2196F3`); // border top
         }
-        if (!this.isWholeRowSelected(index + 1)) {
+        if (!this.isWholeRowSelected(this.visibleRowBelow(index))) {
           selectionShadows.push(`inset 0 -2px 0 0 #2196F3`); // border bottom
         }
       } else {
@@ -1949,10 +2255,20 @@ export class SelectionManager {
       // when selecting a whole row/col, show border around the union like blue borders
       if (type === "row") {
         selectionShadows.push(`inset 2px 0 0 0 #c5b4b3`); // border left
-        if (!this.currentSelectionCoversWholeIndex(index - 1, "row")) {
+        if (
+          !this.currentSelectionCoversWholeIndex(
+            this.visibleRowAbove(index),
+            "row",
+          )
+        ) {
           selectionShadows.push(`inset 0 2px 0 0 #c5b4b3`); // border top
         }
-        if (!this.currentSelectionCoversWholeIndex(index + 1, "row")) {
+        if (
+          !this.currentSelectionCoversWholeIndex(
+            this.visibleRowBelow(index),
+            "row",
+          )
+        ) {
           selectionShadows.push(`inset 0 -2px 0 0 #c5b4b3`); // border bottom
         }
       } else {
@@ -2459,7 +2775,7 @@ export class SelectionManager {
   }
   /**
    * @param data - A map of keys to values. The keys are strings of the form "row,col" where row and col are integers.
-   * @returns A string in TSV format.
+   * @returns A string in TSV format. Hidden rows (see `setHiddenRows`) are left out.
    */
   selectionToTsv(data: Map<string, unknown>) {
     const cellValues: Map<
@@ -2477,6 +2793,9 @@ export class SelectionManager {
 
       // Skip if parsing failed
       if (isNaN(row) || isNaN(col)) return;
+
+      // Hidden rows (e.g. filtered out of a table) are not exported.
+      if (this.hiddenRows.has(row)) return;
 
       // Check if this cell is in any of the selections
       const isInSelection = this.selections.some((selection) => {
@@ -2549,11 +2868,17 @@ export class SelectionManager {
     return cells;
   }
 
+  /**
+   * Clears the selected cells through `saveCellValues`. Readonly cells and
+   * hidden rows (see `setHiddenRows`) are left untouched.
+   */
   clearSelectedCells() {
     const updates: CellDataUpdate[] = [];
     this.getNonOverlappingSelections().forEach((selection) => {
       const cells = this.getCellsWithData(selection);
       cells.forEach((cell) => {
+        // Like Excel, clearing a filtered range leaves its hidden rows intact.
+        if (this.hiddenRows.has(cell.rowIndex)) return;
         updates.push({
           rowIndex: cell.rowIndex,
           colIndex: cell.colIndex,
@@ -3624,3 +3949,32 @@ export class SelectionManager {
 }
 
 type Border = "left" | "right" | "top" | "bottom";
+
+/** A run of consecutive hidden rows, `first..last` inclusive. */
+type HiddenRowRun = { first: number; last: number };
+
+/**
+ * SelectionManager internals for useInitializeSelectionManager. Not exported
+ * from the package entry point and not part of the public API.
+ * @internal
+ */
+export const selectionManagerInternals = {
+  /**
+   * Store hidden rows without notifying anyone, which is safe while React
+   * renders; `flushHiddenRows` publishes the change afterwards.
+   */
+  stageHiddenRows(manager: SelectionManager, rows: Iterable<number>) {
+    manager["stageHiddenRows"](rows);
+  },
+  /** Publish a staged hidden-rows change, if there is one. */
+  flushHiddenRows(manager: SelectionManager) {
+    manager["flushHiddenRows"]();
+  },
+  /** Hidden-row publications skip `listener`, which only mirrors state. */
+  markStateMirrorListener(
+    manager: SelectionManager,
+    listener: (state: SelectionManagerState) => void,
+  ) {
+    manager["stateMirrorListeners"].add(listener);
+  },
+};
