@@ -17,6 +17,13 @@ export type SelectionManagerOptions = {
   formats?: Format[];
   isCellReadonly?: ReadonlyCellPredicate;
   navigation?: SelectionNavigationModel;
+  /**
+   * 0-based sheet rows the host hides, such as rows a table filter hides.
+   * Coordinates never remap: keyboard navigation skips hidden rows, borders
+   * and the fill handle use the nearest visible rows, and clearing and TSV
+   * export leave them out. See `SelectionManager.setHiddenRows`.
+   */
+  hiddenRows?: Iterable<number>;
 };
 
 export type SMArea = {

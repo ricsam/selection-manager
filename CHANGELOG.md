@@ -1,5 +1,11 @@
 # @ricsam/selection-manager
 
+## 0.0.36
+
+### Patch Changes
+
+- add hidden rows for filtered tables: a `hiddenRows` constructor option and `useInitializeSelectionManager` prop, and `setHiddenRows`, `getHiddenRows`, `isRowHidden` and `findVisibleRow`. Keyboard navigation skips hidden rows (jump targets snap back toward the origin), selection, drag, reference and row-header borders and the fill handle use the nearest visible rows, and `clearSelectedCells` and `selectionToTsv` skip hidden rows; coordinates never remap
+
 ## 0.0.35
 
 ### Patch Changes

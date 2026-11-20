@@ -40,7 +40,8 @@ type SelectionManagerState = {
 new SelectionManager(
   getNumRows: () => number,    // Can return Infinity
   getNumCols: () => number,    // Can return Infinity
-  getGroups: () => SMArea[]    // Returns merged/grouped cell areas
+  getGroups: () => SMArea[],   // Returns merged/grouped cell areas
+  options?: Format[] | { formats?: Format[]; isCellReadonly?: ReadonlyCellPredicate; navigation?: SelectionNavigationModel; hiddenRows?: Iterable<number> }
 )
 ```
 
@@ -92,6 +93,16 @@ findGroupContainingCell(cell: { row: number; col: number }): SMArea | undefined
 isHoveringGroup(group: SMArea): boolean
 getBoxShadow(options?: { color?: string; position?: ("top" | "right" | "bottom" | "left" | "all")[] }): string
 ```
+
+### Hidden Rows (Filtered Tables)
+```typescript
+setHiddenRows(rows: Iterable<number>): void  // Replaces the 0-based sheet rows the host hides; no-op when unchanged
+getHiddenRows(): ReadonlySet<number>
+isRowHidden(row: number): boolean
+findVisibleRow(row: number, direction: "up" | "down"): number | undefined  // Nearest visible row from `row` (inclusive) within the grid
+```
+
+Coordinates never remap; selections may span hidden rows. Arrow/Enter/Shift+Enter/Shift+Arrow steps skip hidden rows (no visible row in that direction: no move). Jump (Ctrl/Cmd+Arrow) and host `resolveTarget` jump targets on a hidden row snap back toward the origin to the nearest visible row (host-resolved steps skip like built-in steps); `getNavigationTarget` applies these rules; horizontal moves are unchanged. Selection/drag/reference/row-header borders treat the nearest visible row as the neighbour. The fill handle sits on the selection's last visible row. `clearSelectedCells` and `selectionToTsv` skip hidden rows. Paste, fill events, mouse/header selection, select-all, `forEachSelectedCell` and `getNonOverlappingSelections` are unchanged. A change publishes the current (unchanged) state to `onNextState` listeners so decorations recompute; no controlled state is requested and the hook's `onStateChange` is not called.
 
 ### Visual Styling
 ```typescript
@@ -203,6 +214,7 @@ function useInitializeSelectionManager(props: {
   containerElement?: HTMLElement | null;                 // Auto event handling
   formats?: Format[];                                     // Default: ["csv", "tsv"]
   disableAutoClipboard?: boolean;                         // Default: false - if true, disables auto copy/cut/paste handling
+  hiddenRows?: ReadonlySet<number> | readonly number[];   // Rows hidden by the host (e.g. table filters); applied during render, published after commit
 }): SelectionManager
 ```
 
@@ -381,6 +393,11 @@ const exportSelection = () => {
 - Use `Infinity` as return value from `getNumRows()`/`getNumCols()`
 - Selections can have `Infinity` as end coordinates
 - Visual borders handle infinite ranges appropriately
+
+### Hidden Rows
+- Pass `hiddenRows` (hook/constructor) or call `setHiddenRows()` with the rows a filter hides
+- Keyboard navigation, borders and the fill handle use the nearest visible rows; clearing and TSV export skip hidden rows
+- Coordinates are never remapped
 
 ### Border Colors
 - **Blue (#2196F3)**: Committed selections

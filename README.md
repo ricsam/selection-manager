@@ -364,6 +364,58 @@ During reference mode, cell/header pointer interactions update
 reference range as a separate overlay or use the membership/border queries to
 apply a dotted selection treatment.
 
+### Hidden rows (filtered tables)
+
+When the host hides rows, such as the rows a table filter hides, pass their
+0-based sheet indexes to the manager. Coordinates never remap: cells, rows and
+selections keep their sheet indexes, and a selection may still span hidden rows.
+
+```tsx
+const selectionManager = useInitializeSelectionManager({
+  getNumRows: () => ({ type: "number", value: rows.length }),
+  getNumCols: () => ({ type: "number", value: columns.length }),
+  hiddenRows: filteredOutRows, // ReadonlySet<number> | readonly number[]
+});
+
+// Or imperatively (also `new SelectionManager(..., { hiddenRows })`):
+selectionManager.setHiddenRows(
+  engine.getHiddenRows({ workbookName, sheetName }),
+);
+selectionManager.getHiddenRows(); // ReadonlySet<number>
+selectionManager.isRowHidden(4);
+selectionManager.findVisibleRow(4, "down"); // 4 when visible, else the next visible row below
+```
+
+With hidden rows, the manager follows Excel:
+
+- Arrow keys, Enter/Shift+Enter and Shift+Arrow skip hidden rows. With no
+  visible row in that direction, the selection stays put.
+- A Ctrl/Cmd+Arrow target on a hidden row, including one returned by
+  `navigation.resolveTarget`, snaps back toward the origin to the nearest
+  visible row (or stays at the origin). A host-resolved step continues past
+  hidden rows like a built-in step. `getNavigationTarget` applies the same
+  rules, and horizontal moves are unchanged.
+- Selection, drag, reference and row-header borders treat the nearest visible
+  row as the neighbour, so an area's top and bottom borders show on its first
+  and last visible rows.
+- The fill handle sits on the last visible row of the selection
+  (`canCellHaveFillHandle`), and fill drags are measured from it.
+- `clearSelectedCells` (Delete, Backspace and the automatic cut) and
+  `selectionToTsv` skip hidden rows.
+- Paste, `listenToFill` events, mouse and header selection, select-all,
+  `forEachSelectedCell` and `getNonOverlappingSelections` still use plain
+  sheet ranges, hidden rows included; the host decides how to treat them.
+
+`setHiddenRows` replaces the set and does nothing when it is unchanged.
+Otherwise it publishes the current, unchanged state to the `onNextState`
+listeners, so cells and headers set up with `setupCellElement` and
+`setupHeaderElement`, `observeStateChange` callbacks and `useSelectionManager`
+selectors recompute their decorations. It requests no controlled state and does
+not call the hook's `onStateChange`. The hook applies a changed `hiddenRows`
+prop while rendering, so components rendered in the same pass already see it,
+and publishes the change after the commit. Pass a new set or array when the
+rows change; changing the prop back to `undefined` clears them.
+
 ### 🎨 Visual Magic - Borders That Make Sense
 
 SelectionManager automatically generates beautiful CSS for you:
@@ -972,6 +1024,10 @@ const isHovering = selectionManager.isHoveringCell(row, col);
 
 // 🔒 Is this cell readonly?
 const readonly = selectionManager.isCellReadonly(rowIndex, colIndex);
+
+// 🙈 Is this row hidden (e.g. filtered out)? Where is the next visible row?
+const hidden = selectionManager.isRowHidden(rowIndex);
+const nextVisibleRow = selectionManager.findVisibleRow(rowIndex, "down");
 
 // 🧹 Cancel any hovering state
 selectionManager.cancelHovering();

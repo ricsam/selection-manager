@@ -1,5 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { SelectionManager } from "./selection-manager";
+import {
+  SelectionManager,
+  selectionManagerInternals,
+} from "./selection-manager";
 import type {
   MaybeInfNumber,
   ReadonlyCellPredicate,
@@ -24,6 +27,12 @@ export function useInitializeSelectionManager(props: {
   isCellReadonly?: ReadonlyCellPredicate;
   navigation?: SelectionNavigationModel;
   disableAutoClipboard?: boolean;
+  /**
+   * 0-based sheet rows the host hides, such as rows a table filter hides.
+   * Pass a new set or array when the rows change (changing it back to
+   * undefined clears them). See `SelectionManager.setHiddenRows`.
+   */
+  hiddenRows?: ReadonlySet<number> | readonly number[];
 }): SelectionManager {
   const onStateChangeRef = useRef(props.onStateChange);
   const isCellReadonlyRef = useRef(props.isCellReadonly);
@@ -45,12 +54,18 @@ export function useInitializeSelectionManager(props: {
           resolveTarget: (request) =>
             navigationRef.current?.resolveTarget?.(request),
         },
+        hiddenRows: props.hiddenRows,
       },
     );
     selectionManager.setState(props.state ?? props.initialState ?? {});
     if (onStateChangeRef.current) {
       selectionManager.onNextState(onStateChangeRef.current);
       selectionManager.onNewRequestedState(onStateChangeRef.current);
+      // Hidden rows are not selection state, so their publications skip it.
+      selectionManagerInternals.markStateMirrorListener(
+        selectionManager,
+        onStateChangeRef.current,
+      );
     }
     if (!props.disableAutoClipboard) {
       selectionManager.listenToCopy((cut) => {
@@ -99,6 +114,19 @@ export function useInitializeSelectionManager(props: {
     selectionManager.controlled = false;
   }
 
+  // Like a controlled state, a new hiddenRows value is applied while rendering,
+  // so components rendered in this pass (including newly mounted cells) see
+  // it, and published from the layout effect below, which notifies the cells
+  // and headers that are already mounted.
+  const hiddenRowsRef = useRef(props.hiddenRows);
+  if (hiddenRowsRef.current !== props.hiddenRows) {
+    hiddenRowsRef.current = props.hiddenRows;
+    selectionManagerInternals.stageHiddenRows(
+      selectionManager,
+      props.hiddenRows ?? [],
+    );
+  }
+
   // we can't start re-rendering other components while this hook is running
   // (other components that might be have setState callbacks in nextStateListeners)
   // so we need to use a layout effect
@@ -113,6 +141,11 @@ export function useInitializeSelectionManager(props: {
       });
     }
   }, [selectionManager, props.state]);
+
+  // Publishes a hiddenRows change staged during render; a no-op otherwise.
+  useIsomorphicLayoutEffect(() => {
+    selectionManagerInternals.flushHiddenRows(selectionManager);
+  });
 
   return selectionManager;
 }
