@@ -136,6 +136,48 @@ describe("SelectionManager Extended Tests", () => {
       expect(fillCallback).toHaveBeenCalled();
     });
 
+    it("should not fill or clear when the fill handle is clicked without dragging", () => {
+      const pointer = {
+        shiftKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        isFillHandle: false,
+      };
+      selectionManager.cellMouseDown(1, 1, pointer);
+      selectionManager.cellMouseEnter(3, 1);
+      selectionManager.mouseUp();
+      const fillCallback = mock();
+      selectionManager.listenToFill(fillCallback);
+
+      selectionManager.cellMouseDown(3, 1, { ...pointer, isFillHandle: true });
+      selectionManager.mouseUp();
+      // Leaving the handle and coming back to it is still no change.
+      selectionManager.cellMouseDown(3, 1, { ...pointer, isFillHandle: true });
+      selectionManager.cellMouseEnter(5, 1);
+      selectionManager.cellMouseEnter(3, 1);
+      selectionManager.mouseUp();
+
+      expect(fillCallback).not.toHaveBeenCalled();
+      expect(selectionManager.selections).toHaveLength(1);
+      expect(selectionManager.selections[0]).toMatchObject({
+        start: { row: 1, col: 1 },
+        end: { row: { type: "number", value: 3 }, col: { type: "number", value: 1 } },
+      });
+
+      // Dragging back into the selection still clears the cells left out.
+      selectionManager.cellMouseDown(3, 1, { ...pointer, isFillHandle: true });
+      selectionManager.cellMouseEnter(2, 1);
+      selectionManager.mouseUp();
+      expect(fillCallback).toHaveBeenCalledTimes(1);
+      expect(fillCallback.mock.calls[0]![0]).toEqual({
+        type: "shrink",
+        rangeToClear: {
+          start: { row: 3, col: 1 },
+          end: { row: { type: "number", value: 3 }, col: { type: "number", value: 1 } },
+        },
+      });
+    });
+
     it("should handle fill direction logic", () => {
       // Test horizontal fill
       selectionManager.cellMouseDown(1, 1, {

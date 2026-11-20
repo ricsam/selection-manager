@@ -3509,6 +3509,23 @@ export class SelectionManager {
     return a;
   }
 
+  /** Whether two areas span the same rows and columns. */
+  private coversSameCells(a: SMArea, b: SMArea): boolean {
+    const bounds = (area: SMArea) => {
+      const endRow = this.max(area.start.row, area.end.row);
+      const endCol = this.max(area.start.col, area.end.col);
+      return [
+        this.min(area.start.row, area.end.row),
+        this.min(area.start.col, area.end.col),
+        endRow.type === "number" ? endRow.value : Infinity,
+        endCol.type === "number" ? endCol.value : Infinity,
+      ];
+    };
+    const left = bounds(a);
+    const right = bounds(b);
+    return left.every((value, index) => value === right[index]);
+  }
+
   inputCaptureElement: HTMLTextAreaElement | null = null;
   private inputCaptureAccessibility: {
     label?: string;
@@ -3593,7 +3610,10 @@ export class SelectionManager {
             this.listenToFillListeners.forEach((listener) => listener(ev));
           };
 
-          if (this.isSelecting.eventType === "shrink") {
+          if (this.coversSameCells(this.isSelecting, fillHandleBaseSelection)) {
+            // The fill handle was pressed and released without leaving the
+            // selection's own extent: nothing to fill or clear.
+          } else if (this.isSelecting.eventType === "shrink") {
             this.deselectArea(fillHandleBaseSelection);
             this.selections.push(this.isSelecting);
             const rangeToClear = this.difference(
