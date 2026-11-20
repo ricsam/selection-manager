@@ -5,6 +5,7 @@
 ### Patch Changes
 
 - add hidden rows for filtered tables: a `hiddenRows` constructor option and `useInitializeSelectionManager` prop, and `setHiddenRows`, `getHiddenRows`, `isRowHidden` and `findVisibleRow`. Keyboard navigation skips hidden rows (jump targets snap back toward the origin), selection, drag, reference and row-header borders and the fill handle use the nearest visible rows, and `clearSelectedCells` and `selectionToTsv` skip hidden rows; coordinates never remap
+- fix: pressing and releasing the fill handle without dragging it away emitted a `shrink` fill event whose `rangeToClear` was the whole selection, so hosts cleared the selected cells; it now emits no fill event
 
 ## 0.0.35
 
